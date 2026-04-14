@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.csob.ca</groupId>
+    <artifactId>ca-backend-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+    <name>CA Backend Parent</name>
+    <description>Customer Assessment support module — multi-module backend.</description>
+
+    <modules>
+        <module>ca-shared</module>
+        <module>ca-checklist</module>
+        <module>ca-tools</module>
+        <module>ca-ai-client</module>
+        <module>ca-validation</module>
+        <module>ca-orchestration</module>
+        <module>ca-persistence</module>
+        <module>ca-api</module>
+    </modules>
+
+    <properties>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <!-- Spring Boot BOM: imported here only for version alignment.
+             Spring Boot starters are pulled in only by ca-api. -->
+        <spring.boot.version>3.4.0</spring.boot.version>
+
+        <!-- Domain-module dependencies (NOT Spring Boot starters): -->
+        <jakarta.persistence.version>3.1.0</jakarta.persistence.version>
+        <spring.data.jpa.version>3.4.0</spring.data.jpa.version>
+        <jackson.version>2.18.2</jackson.version>
+        <json.schema.validator.version>1.5.4</json.schema.validator.version>
+        <slf4j.version>2.0.16</slf4j.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- BOM: aligns transitive Spring/Jackson/etc. versions everywhere. -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring.boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <!-- Internal modules -->
+            <dependency>
+                <groupId>com.csob.ca</groupId>
+                <artifactId>ca-shared</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.csob.ca</groupId>
+                <artifactId>ca-checklist</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.csob.ca</groupId>
+                <artifactId>ca-tools</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.csob.ca</groupId>
+                <artifactId>ca-ai-client</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.csob.ca</groupId>
+                <artifactId>ca-validation</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.csob.ca</groupId>
+                <artifactId>ca-orchestration</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.csob.ca</groupId>
+                <artifactId>ca-persistence</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <!-- Selected externals (pulled into specific modules below) -->
+            <dependency>
+                <groupId>com.networknt</groupId>
+                <artifactId>json-schema-validator</artifactId>
+                <version>${json.schema.validator.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>jakarta.persistence</groupId>
+                <artifactId>jakarta.persistence-api</artifactId>
+                <version>${jakarta.persistence.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.13.0</version>
+                    <configuration>
+                        <release>21</release>
+                        <parameters>true</parameters>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-maven-plugin</artifactId>
+                    <version>${spring.boot.version}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+</project>

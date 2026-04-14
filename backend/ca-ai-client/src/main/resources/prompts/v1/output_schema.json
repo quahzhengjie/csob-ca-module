@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://csob.example/schemas/ca/v1/ai-output.schema.json",
+  "title": "CASummary",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "packId",
+    "checklistVersion",
+    "modelId",
+    "modelVersion",
+    "generatedAt",
+    "sections"
+  ],
+  "properties": {
+    "packId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{8,64}$"
+    },
+    "checklistVersion": {
+      "type": "string",
+      "pattern": "^v[0-9]+(\\.[0-9]+)*$"
+    },
+    "modelId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "modelVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sections": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 5,
+      "items": { "$ref": "#/$defs/Section" }
+    }
+  },
+  "$defs": {
+    "SectionHeading": {
+      "enum": [
+        "IDENTITY",
+        "DOCUMENTS",
+        "SCREENING",
+        "OWNERSHIP_AND_CONTROL",
+        "DATA_QUALITY"
+      ]
+    },
+    "SourceType": {
+      "enum": [
+        "PARTY_FIELD",
+        "DOCUMENT_META",
+        "SCREENING_RESULT",
+        "RELATED_PARTY",
+        "CHECKLIST_FINDING"
+      ]
+    },
+    "FactKind": {
+      "enum": [
+        "ENTITY",
+        "DATE",
+        "NUMBER",
+        "STATUS",
+        "IDENTIFIER"
+      ]
+    },
+    "Section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["heading", "sentences"],
+      "properties": {
+        "heading": { "$ref": "#/$defs/SectionHeading" },
+        "sentences": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/Sentence" }
+        }
+      }
+    },
+    "Sentence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "citations", "factMentions"],
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 320,
+          "pattern": "^[^\\n\\r]+$"
+        },
+        "citations": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 6,
+          "items": { "$ref": "#/$defs/Citation" }
+        },
+        "factMentions": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 16,
+          "items": { "$ref": "#/$defs/FactMention" }
+        }
+      }
+    },
+    "Citation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceType", "sourceId", "fieldPath"],
+      "properties": {
+        "sourceType": { "$ref": "#/$defs/SourceType" },
+        "sourceId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,128}$"
+        },
+        "fieldPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_\\[\\].]*$"
+        }
+      }
+    },
+    "FactMention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "kind", "citation"],
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "kind": { "$ref": "#/$defs/FactKind" },
+        "citation": { "$ref": "#/$defs/Citation" }
+      }
+    }
+  }
+}

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.csob.ca</groupId>
+        <artifactId>ca-backend-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>ca-tools</artifactId>
+    <name>CA Tool Adapters</name>
+    <description>
+        Read-only typed adapters over upstream KYC sources (party, document metadata,
+        screening, related parties, plus external lookups such as ACRA).
+        No OCR in v1. No AI logic. No business logic.
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.csob.ca</groupId>
+            <artifactId>ca-shared</artifactId>
+        </dependency>
+    </dependencies>
+</project>

@@ -1,0 +1,51 @@
+# --- Java / Maven ---
+target/
+!**/src/main/**/target/
+!**/src/test/**/target/
+*.jar
+*.war
+*.ear
+*.class
+hs_err_pid*
+
+# Maven wrapper jar (if you add the wrapper, keep the .mvn/wrapper/maven-wrapper.jar in version control;
+# remove the exclusion if not using the wrapper)
+# .mvn/wrapper/maven-wrapper.jar
+
+# --- IDE ---
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.project
+.classpath
+.settings/
+nbproject/private/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Secrets / local config ---
+.env
+.env.*
+application-secret*.yml
+application-secret*.yaml
+config/application-secret*.yml
+**/secrets/
+
+# --- Logs / temp ---
+*.log
+*.tmp
+logs/
+tmp/
+
+# --- Sensitive test fixtures ---
+**/test-fixtures/real-*.json
+**/ai-debug-output/
+
+# --- Frontend (for when ../frontend/ lands) ---
+node_modules/
+.next/
+dist/

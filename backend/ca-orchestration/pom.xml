@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.csob.ca</groupId>
+        <artifactId>ca-backend-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>ca-orchestration</artifactId>
+    <name>CA Orchestration</name>
+    <description>
+        PackLifecycle state machine and PipelineCoordinator. The ONLY module
+        permitted to wire other layers. Backend-controlled, linear pipeline.
+        No agentic logic. No autonomous tool selection.
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.csob.ca</groupId>
+            <artifactId>ca-shared</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.csob.ca</groupId>
+            <artifactId>ca-checklist</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.csob.ca</groupId>
+            <artifactId>ca-tools</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.csob.ca</groupId>
+            <artifactId>ca-ai-client</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.csob.ca</groupId>
+            <artifactId>ca-validation</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.csob.ca</groupId>
+            <artifactId>ca-persistence</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+    </dependencies>
+</project>

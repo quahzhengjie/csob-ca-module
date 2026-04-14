@@ -1,0 +1,29 @@
+spring:
+  application:
+    name: csob-ca
+
+server:
+  port: 8082
+  servlet:
+    context-path: /api
+
+# Profiles: local | dev | staging | prod
+# Secrets are NEVER committed. Load via optional:file imports or environment variables.
+spring.config:
+  import:
+    - optional:file:./config/application-secret.yml
+
+ca:
+  checklist:
+    defaultVersion: v1.0
+  prompt:
+    defaultVersion: v1
+  ai:
+    provider: STUB       # STUB | ANTHROPIC (configure via application-{profile}.yml)
+    retry:
+      enabled: false
+      maxAttempts: 1
+  audit:
+    retentionDays: 2555  # 7 years; confirm per regulatory policy
+  review:
+    fourEyesRequiredForSeverity: CRITICAL

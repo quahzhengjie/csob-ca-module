@@ -1,0 +1,14 @@
+-- Flyway migration V1 — CA module schema skeleton.
+-- Tables follow the csob_ca_* naming convention for auditor visibility.
+-- DDL to be completed before first release. Full column spec matches the
+-- ca-persistence entity classes under com.csob.ca.persistence.entity.
+
+-- TODO: csob_ca_packs
+-- TODO: csob_ca_tool_outputs
+-- TODO: csob_ca_checklist_findings
+-- TODO: csob_ca_raw_ai_outputs
+-- TODO: csob_ca_validation_reports
+-- TODO: csob_ca_reviewer_actions
+-- TODO: csob_ca_sign_offs
+-- TODO: csob_ca_final_summaries
+-- TODO: csob_ca_audit_log

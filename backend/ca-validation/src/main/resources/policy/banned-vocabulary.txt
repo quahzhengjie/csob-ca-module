@@ -1,0 +1,29 @@
+# Banned vocabulary — v1.
+# One term per line. Lines starting with '#' and blank lines are ignored.
+# Matching is case-insensitive; single terms match as whole words (\b…\b);
+# multi-word terms match as whole phrases with flexible internal whitespace.
+# TODO governance: finalise with compliance reviewer before release.
+
+# --- Speculative / interpretive language ---
+suggest
+likely
+appears
+may
+indicates
+could
+should
+
+# --- Decision / rating / recommendation language ---
+recommend
+high risk
+medium risk
+low risk
+approve
+reject
+safe
+suspicious
+clear to proceed
+satisfactory
+unsatisfactory
+escalate
+decline
