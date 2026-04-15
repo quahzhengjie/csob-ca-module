@@ -34,7 +34,7 @@ import java.util.List;
  *
  * All sentence violations are collected — no early exit.
  */
-public final class FormatGuardChecker implements ValidationCheck {
+public final class FormatGuardCheck implements ValidationCheck {
 
     static final String CODE_SCHEMA_NOT_PASSED = "SCHEMA_NOT_PASSED";
     static final String CODE_INVALID_FORMAT    = "INVALID_FORMAT";

@@ -36,7 +36,7 @@ import java.util.Map;
  *
  * All invalid/duplicate headings are collected in one pass — no early exit.
  */
-public final class SectionWhitelistChecker implements ValidationCheck {
+public final class SectionWhitelistCheck implements ValidationCheck {
 
     static final String CODE_SCHEMA_NOT_PASSED         = "SCHEMA_NOT_PASSED";
     static final String CODE_INVALID_SECTION_HEADING   = "INVALID_SECTION_HEADING";

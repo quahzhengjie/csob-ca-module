@@ -40,9 +40,9 @@ import java.util.regex.Pattern;
  * for terms that are also proper nouns (e.g. "May" as a month vs "may" as
  * speculation). Documented for the compliance reviewer; refinement deferred.
  */
-public final class BannedVocabularyChecker implements ValidationCheck {
+public final class BannedVocabularyCheck implements ValidationCheck {
 
-    private static final Logger log = LoggerFactory.getLogger(BannedVocabularyChecker.class);
+    private static final Logger log = LoggerFactory.getLogger(BannedVocabularyCheck.class);
 
     public static final String POLICY_RESOURCE = "/policy/banned-vocabulary.txt";
 
@@ -55,7 +55,7 @@ public final class BannedVocabularyChecker implements ValidationCheck {
     private final List<String> bannedTerms;
     private final List<Pattern> patterns;
 
-    public BannedVocabularyChecker(List<String> bannedTerms) {
+    public BannedVocabularyCheck(List<String> bannedTerms) {
         List<String> canonicals = new ArrayList<>();
         List<Pattern> compiled = new ArrayList<>();
         if (bannedTerms != null) {
@@ -70,7 +70,7 @@ public final class BannedVocabularyChecker implements ValidationCheck {
         this.bannedTerms = List.copyOf(canonicals);
         this.patterns = List.copyOf(compiled);
         if (canonicals.isEmpty()) {
-            log.warn("BannedVocabularyChecker constructed with an empty term list — check will always PASS");
+            log.warn("BannedVocabularyCheck constructed with an empty term list — check will always PASS");
         }
     }
 
@@ -160,7 +160,7 @@ public final class BannedVocabularyChecker implements ValidationCheck {
      * is present on the classpath).
      */
     public static List<String> loadDefaultTerms() {
-        try (InputStream in = BannedVocabularyChecker.class.getResourceAsStream(POLICY_RESOURCE)) {
+        try (InputStream in = BannedVocabularyCheck.class.getResourceAsStream(POLICY_RESOURCE)) {
             if (in == null) {
                 log.error("Banned vocabulary resource missing from classpath: {}", POLICY_RESOURCE);
                 return List.of();

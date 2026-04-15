@@ -43,7 +43,7 @@ import java.util.Set;
  * coverage (DATE/NUMBER/STATUS token enforcement inside sentence.text).
  * It is deliberately unused in v1.
  */
-public final class CoverageChecker implements ValidationCheck {
+public final class CoverageCheck implements ValidationCheck {
 
     static final String CODE_SCHEMA_NOT_PASSED        = "SCHEMA_NOT_PASSED";
     static final String CODE_FACT_MISSING_FROM_SUMMARY = "FACT_MISSING_FROM_SUMMARY";
@@ -54,7 +54,7 @@ public final class CoverageChecker implements ValidationCheck {
     @SuppressWarnings("unused") // reserved for v2 advanced coverage
     private final Tokeniser tokeniser;
 
-    public CoverageChecker(Tokeniser tokeniser) {
+    public CoverageCheck(Tokeniser tokeniser) {
         this.tokeniser = tokeniser;
     }
 

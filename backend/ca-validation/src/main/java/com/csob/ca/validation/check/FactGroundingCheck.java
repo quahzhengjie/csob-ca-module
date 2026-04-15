@@ -47,7 +47,7 @@ import java.util.Optional;
  *
  * Never throws; continues processing all mentions before returning.
  */
-public final class FactGroundingChecker implements ValidationCheck {
+public final class FactGroundingCheck implements ValidationCheck {
 
     static final String CODE_SCHEMA_NOT_PASSED = "SCHEMA_NOT_PASSED";
     static final String CODE_FACT_NOT_GROUNDED = "FACT_NOT_GROUNDED";
@@ -66,7 +66,7 @@ public final class FactGroundingChecker implements ValidationCheck {
 
     private final CitationResolver resolver;
 
-    public FactGroundingChecker(CitationResolver resolver) {
+    public FactGroundingCheck(CitationResolver resolver) {
         this.resolver = Objects.requireNonNull(resolver, "resolver");
     }
 

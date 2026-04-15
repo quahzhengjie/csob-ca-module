@@ -34,7 +34,7 @@ import java.util.List;
  * the JSON Pointer path and `detail` for the message. This class populates
  * them per that contract.
  */
-public final class CitationPresenceChecker implements ValidationCheck {
+public final class CitationPresenceCheck implements ValidationCheck {
 
     static final String CODE_SCHEMA_NOT_PASSED = "SCHEMA_NOT_PASSED";
     static final String CODE_CITATION_MISSING  = "CITATION_MISSING";

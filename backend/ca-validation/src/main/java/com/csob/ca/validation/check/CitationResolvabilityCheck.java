@@ -57,7 +57,7 @@ import java.util.stream.Stream;
  *    value). It is deliberately unused here — resolvability is the narrower
  *    question of whether the cited entity exists at all.
  */
-public final class CitationResolvabilityChecker implements ValidationCheck {
+public final class CitationResolvabilityCheck implements ValidationCheck {
 
     static final String CODE_SCHEMA_NOT_PASSED     = "SCHEMA_NOT_PASSED";
     static final String CODE_CITATION_UNRESOLVABLE = "CITATION_UNRESOLVABLE";
@@ -67,7 +67,7 @@ public final class CitationResolvabilityChecker implements ValidationCheck {
     @SuppressWarnings("unused") // reserved for FACT_GROUNDING
     private final CitationResolver resolver;
 
-    public CitationResolvabilityChecker(CitationResolver resolver) {
+    public CitationResolvabilityCheck(CitationResolver resolver) {
         this.resolver = resolver;
     }
 

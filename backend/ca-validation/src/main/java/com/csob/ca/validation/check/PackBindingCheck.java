@@ -28,7 +28,7 @@ import java.util.Objects;
  * Both ID mismatches are collected in a single run (no early-exit on the
  * first mismatch) so the reviewer sees the full picture.
  */
-public final class PackBindingChecker implements ValidationCheck {
+public final class PackBindingCheck implements ValidationCheck {
 
     static final String CODE_SCHEMA_NOT_PASSED          = "SCHEMA_NOT_PASSED";
     static final String CODE_PACK_ID_MISMATCH           = "PACK_ID_MISMATCH";

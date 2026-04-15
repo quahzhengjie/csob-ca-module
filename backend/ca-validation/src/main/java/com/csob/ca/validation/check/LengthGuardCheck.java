@@ -30,7 +30,7 @@ import java.util.List;
  *
  * All violations collected in one pass — no early exit. Never throws.
  */
-public final class LengthGuardChecker implements ValidationCheck {
+public final class LengthGuardCheck implements ValidationCheck {
 
     public static final int MAX_SECTIONS_PER_PACK          = 5;
     public static final int MAX_SENTENCES_PER_SECTION      = 8;

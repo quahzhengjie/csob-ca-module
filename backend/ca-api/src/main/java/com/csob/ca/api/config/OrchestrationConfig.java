@@ -22,16 +22,16 @@ import com.csob.ca.persistence.repository.PackRepository;
 import com.csob.ca.tools.adapter.ToolInvoker;
 import com.csob.ca.validation.DefaultValidationPipeline;
 import com.csob.ca.validation.ValidationPipeline;
-import com.csob.ca.validation.check.BannedVocabularyChecker;
-import com.csob.ca.validation.check.CitationPresenceChecker;
-import com.csob.ca.validation.check.CitationResolvabilityChecker;
-import com.csob.ca.validation.check.CoverageChecker;
-import com.csob.ca.validation.check.FactGroundingChecker;
-import com.csob.ca.validation.check.FormatGuardChecker;
-import com.csob.ca.validation.check.LengthGuardChecker;
-import com.csob.ca.validation.check.PackBindingChecker;
+import com.csob.ca.validation.check.BannedVocabularyCheck;
+import com.csob.ca.validation.check.CitationPresenceCheck;
+import com.csob.ca.validation.check.CitationResolvabilityCheck;
+import com.csob.ca.validation.check.CoverageCheck;
+import com.csob.ca.validation.check.FactGroundingCheck;
+import com.csob.ca.validation.check.FormatGuardCheck;
+import com.csob.ca.validation.check.LengthGuardCheck;
+import com.csob.ca.validation.check.PackBindingCheck;
 import com.csob.ca.validation.check.SchemaValidator;
-import com.csob.ca.validation.check.SectionWhitelistChecker;
+import com.csob.ca.validation.check.SectionWhitelistCheck;
 import com.csob.ca.validation.check.ValidationCheck;
 import com.csob.ca.validation.support.CitationResolver;
 import com.csob.ca.validation.support.DefaultCitationResolver;
@@ -98,15 +98,15 @@ public class OrchestrationConfig {
         // via spring-boot-starter-json, pulled in by starter-web).
         List<ValidationCheck> ordered = List.of(
                 new SchemaValidator(objectMapper),
-                new PackBindingChecker(),
-                new SectionWhitelistChecker(),
-                new LengthGuardChecker(),
-                new FormatGuardChecker(),
-                new CitationPresenceChecker(),
-                new CitationResolvabilityChecker(resolver),
-                new FactGroundingChecker(resolver),
-                new CoverageChecker(tokeniser),
-                new BannedVocabularyChecker(BannedVocabularyChecker.loadDefaultTerms())
+                new PackBindingCheck(),
+                new SectionWhitelistCheck(),
+                new LengthGuardCheck(),
+                new FormatGuardCheck(),
+                new CitationPresenceCheck(),
+                new CitationResolvabilityCheck(resolver),
+                new FactGroundingCheck(resolver),
+                new CoverageCheck(tokeniser),
+                new BannedVocabularyCheck(BannedVocabularyCheck.loadDefaultTerms())
         );
         return new DefaultValidationPipeline(ordered);
     }

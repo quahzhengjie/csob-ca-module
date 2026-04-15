@@ -12,7 +12,7 @@ import java.util.Optional;
  * the list of ToolOutputs + the ChecklistResult. Returns the observed
  * value at the cited fieldPath, or empty if the citation does not resolve.
  *
- * Used by CitationResolvabilityChecker and FactGroundingChecker.
+ * Used by CitationResolvabilityCheck and FactGroundingCheck.
  */
 public interface CitationResolver {
     Optional<String> resolve(CitationDto citation,
