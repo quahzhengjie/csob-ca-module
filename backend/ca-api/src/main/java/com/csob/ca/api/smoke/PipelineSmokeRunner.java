@@ -12,6 +12,14 @@ import com.csob.ca.checklist.engine.ChecklistEngine;
 import com.csob.ca.checklist.engine.ChecklistEngineImpl;
 import com.csob.ca.checklist.version.ChecklistVersionResolver;
 import com.csob.ca.checklist.version.DefaultChecklistVersionResolver;
+import com.csob.ca.orchestration.PipelineCoordinator;
+import com.csob.ca.orchestration.policy.RetryPolicy;
+import com.csob.ca.orchestration.steps.EvaluateChecklistStep;
+import com.csob.ca.orchestration.steps.InvokeAiStep;
+import com.csob.ca.orchestration.steps.InvokeToolsStep;
+import com.csob.ca.orchestration.steps.PipelineStep;
+import com.csob.ca.orchestration.steps.ValidateAiStep;
+import com.csob.ca.shared.dto.CaPackDto;
 import com.csob.ca.shared.dto.AddressDto;
 import com.csob.ca.shared.dto.AiSummaryPayloadDto;
 import com.csob.ca.shared.dto.ChecklistFindingDto;
@@ -160,6 +168,90 @@ public final class PipelineSmokeRunner {
         runOne("FAIL-SCENARIO", FAIL_CASE_JSON,
                 packId, checklistVersion, mapper, toolOutputs, checklistResult,
                 assembledRequest, pipeline);
+
+        // =====================================================================
+        // Coordinator-driven scenarios — proves PipelineCoordinator produces
+        // the same outcome as the manual wiring above.
+        // =====================================================================
+        String partyId = partyFacts.partyId();
+
+        banner("PIPELINE COORDINATOR - PASS CASE (via PipelineCoordinator.run)");
+        CaPackDto passPack = runViaCoordinator(packId, partyId, checklistVersion, PROMPT_VERSION,
+                partyFacts, fixedClock, mapper, StubModelClient.DEFAULT_CANNED_JSON);
+        reportPack("COORD-PASS", passPack);
+
+        banner("PIPELINE COORDINATOR - FAIL CASE (via PipelineCoordinator.run)");
+        CaPackDto failPack = runViaCoordinator(packId, partyId, checklistVersion, PROMPT_VERSION,
+                partyFacts, fixedClock, mapper, FAIL_CASE_JSON);
+        reportPack("COORD-FAIL", failPack);
+
+        banner("EQUIVALENCE SUMMARY (coordinator vs manual)");
+        System.out.println("manual PASS → VALID    |  coord PASS → " + passPack.validationReport().status());
+        System.out.println("manual FAIL → REJECTED |  coord FAIL → " + failPack.validationReport().status());
+    }
+
+    /**
+     * Build a PipelineCoordinator from the same beans OrchestrationConfig
+     * would wire in Spring, then run it. Every component is real; the only
+     * thing we vary between scenarios is the stub's canned JSON.
+     */
+    private static CaPackDto runViaCoordinator(String packId,
+                                               String partyId,
+                                               String checklistVersion,
+                                               String promptVersion,
+                                               PartyFactsDto partyFacts,
+                                               Clock clock,
+                                               ObjectMapper mapper,
+                                               String cannedJson) throws Exception {
+        // Tool layer — same filesystem source the manual path uses.
+        Path sampleDir = Paths.get(System.getProperty(
+                "ca.smoke.sampleDataDir",
+                "./sample-data/documents")).toAbsolutePath().normalize();
+        com.csob.ca.tools.adapter.DocumentMetadataSource source =
+                new com.csob.ca.tools.adapter.FilesystemDocumentMetadataSource(sampleDir, mapper);
+        com.csob.ca.tools.adapter.DocumentMetadataTool docTool =
+                new com.csob.ca.tools.adapter.DocumentMetadataToolAdapter(source);
+        com.csob.ca.tools.adapter.ToolInvoker toolInvoker =
+                new com.csob.ca.tools.adapter.DefaultToolInvoker(null, docTool, null, null);
+
+        // Checklist, assembler, validator — same construction as manual path.
+        ChecklistVersionResolver resolver = new DefaultChecklistVersionResolver(clock);
+        ChecklistEngine checklistEngine   = new ChecklistEngineImpl(resolver, clock);
+        PromptLoader promptLoader         = new ClasspathPromptLoader();
+        PromptAssembler promptAssembler   = new TemplatePromptAssembler(promptLoader, mapper);
+        ValidationPipeline validation     = buildValidationPipeline(mapper);
+
+        // Stub model with the per-scenario canned JSON.
+        ModelClient stub = new StubModelClient(cannedJson);
+
+        List<PipelineStep> steps = List.of(
+                new InvokeToolsStep(toolInvoker),
+                new EvaluateChecklistStep(checklistEngine),
+                new InvokeAiStep(promptAssembler, stub, RetryPolicy.disabled(), mapper, clock),
+                new ValidateAiStep(validation)
+        );
+        PipelineCoordinator coordinator = new PipelineCoordinator(steps, clock);
+
+        return coordinator.run(packId, partyId, checklistVersion, promptVersion, partyFacts, "smoke-runner");
+    }
+
+    private static void reportPack(String label, CaPackDto pack) {
+        System.out.println("[" + label + "] pack.status           : " + pack.status());
+        System.out.println("[" + label + "] pack.modelId          : " + pack.modelId());
+        System.out.println("[" + label + "] checklist.findings    : "
+                + pack.checklistResult().findings().size()
+                + "  (pass=" + pack.checklistResult().completion().passed()
+                + " fail=" + pack.checklistResult().completion().failed() + ")");
+        System.out.println("[" + label + "] report.status         : " + pack.validationReport().status());
+        System.out.println("  per-check results:");
+        pack.validationReport().checks().forEach(c -> {
+            String line = "    " + pad(c.checkId().name(), 26) + " " + c.status();
+            if (!c.failures().isEmpty()) line += "  (" + c.failures().size() + " failure(s))";
+            System.out.println(line);
+            c.failures().forEach(f ->
+                    System.out.println("        - " + f.code() + " @ " + f.locator()
+                            + "  ::  " + f.detail()));
+        });
     }
 
     // ---- one execution: Stub(AiRequest) -> RawAiOutput -> Pipeline -> Report ----

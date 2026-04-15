@@ -13,14 +13,11 @@ import com.csob.ca.checklist.version.ChecklistVersionResolver;
 import com.csob.ca.checklist.version.DefaultChecklistVersionResolver;
 import com.csob.ca.orchestration.PipelineCoordinator;
 import com.csob.ca.orchestration.policy.RetryPolicy;
-import com.csob.ca.orchestration.steps.GatherDataStep;
+import com.csob.ca.orchestration.steps.EvaluateChecklistStep;
 import com.csob.ca.orchestration.steps.InvokeAiStep;
-import com.csob.ca.orchestration.steps.PersistStep;
+import com.csob.ca.orchestration.steps.InvokeToolsStep;
 import com.csob.ca.orchestration.steps.PipelineStep;
-import com.csob.ca.orchestration.steps.RunChecklistStep;
 import com.csob.ca.orchestration.steps.ValidateAiStep;
-import com.csob.ca.persistence.audit.AuditWriter;
-import com.csob.ca.persistence.repository.PackRepository;
 import com.csob.ca.tools.adapter.DefaultToolInvoker;
 import com.csob.ca.tools.adapter.DocumentMetadataSource;
 import com.csob.ca.tools.adapter.DocumentMetadataTool;
@@ -206,21 +203,30 @@ public class OrchestrationConfig {
     }
 
     // ----- Pipeline coordinator -----
+    /**
+     * Fixed, backend-controlled pipeline:
+     *   INVOKE_TOOLS → EVALUATE_CHECKLIST → INVOKE_AI → VALIDATE_AI
+     *
+     * PersistStep is intentionally NOT wired today — persistence is a
+     * Phase-3 deliverable and the {@code PackRepository} / {@code AuditWriter}
+     * beans don't exist yet. The coordinator returns a fully-populated
+     * CaPackDto; callers (controllers) can persist it later without
+     * changing the step graph.
+     */
     @Bean
     public PipelineCoordinator pipelineCoordinator(ToolInvoker toolInvoker,
                                                    ChecklistEngine checklistEngine,
                                                    PromptAssembler promptAssembler,
                                                    ModelClient modelClient,
                                                    ValidationPipeline validationPipeline,
-                                                   PackRepository packRepository,
-                                                   AuditWriter auditWriter) {
+                                                   ObjectMapper objectMapper,
+                                                   Clock clock) {
         List<PipelineStep> steps = List.of(
-                new GatherDataStep(toolInvoker),
-                new RunChecklistStep(checklistEngine),
-                new InvokeAiStep(promptAssembler, modelClient, RetryPolicy.disabled()),
-                new ValidateAiStep(validationPipeline),
-                new PersistStep(packRepository, auditWriter)
+                new InvokeToolsStep(toolInvoker),
+                new EvaluateChecklistStep(checklistEngine),
+                new InvokeAiStep(promptAssembler, modelClient, RetryPolicy.disabled(), objectMapper, clock),
+                new ValidateAiStep(validationPipeline)
         );
-        return new PipelineCoordinator(steps);
+        return new PipelineCoordinator(steps, clock);
     }
 }
