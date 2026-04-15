@@ -62,8 +62,8 @@ public class OrchestrationConfig {
     }
 
     @Bean
-    public PromptAssembler promptAssembler(PromptLoader loader) {
-        return new TemplatePromptAssembler(loader);
+    public PromptAssembler promptAssembler(PromptLoader loader, ObjectMapper objectMapper) {
+        return new TemplatePromptAssembler(loader, objectMapper);
     }
 
     @Bean

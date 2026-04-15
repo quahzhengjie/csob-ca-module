@@ -1,20 +1,28 @@
 package com.csob.ca.api.smoke;
 
 import com.csob.ca.ai.ModelClient;
+import com.csob.ca.ai.prompt.ClasspathPromptLoader;
+import com.csob.ca.ai.prompt.PromptAssembler;
+import com.csob.ca.ai.prompt.PromptLoader;
+import com.csob.ca.ai.prompt.TemplatePromptAssembler;
 import com.csob.ca.ai.provider.StubModelClient;
 import com.csob.ca.ai.request.AiRequest;
 import com.csob.ca.ai.request.AiResponse;
+import com.csob.ca.shared.dto.AddressDto;
 import com.csob.ca.shared.dto.AiSummaryPayloadDto;
 import com.csob.ca.shared.dto.ChecklistCompletionDto;
 import com.csob.ca.shared.dto.ChecklistFindingDto;
 import com.csob.ca.shared.dto.ChecklistResultDto;
 import com.csob.ca.shared.dto.DocumentMetaDto;
 import com.csob.ca.shared.dto.EvidenceDto;
+import com.csob.ca.shared.dto.IndividualDetailsDto;
+import com.csob.ca.shared.dto.PartyFactsDto;
 import com.csob.ca.shared.dto.RawAiOutputDto;
 import com.csob.ca.shared.dto.ToolOutputDto;
 import com.csob.ca.shared.dto.ValidationReportDto;
 import com.csob.ca.shared.dto.tool.DocumentMetadataToolPayload;
 import com.csob.ca.shared.enums.ParseStatus;
+import com.csob.ca.shared.enums.PartyType;
 import com.csob.ca.shared.enums.RuleSeverity;
 import com.csob.ca.shared.enums.RuleStatus;
 import com.csob.ca.shared.enums.SourceType;
@@ -46,13 +54,15 @@ import java.time.LocalDate;
 import java.util.List;
 
 /**
- * End-to-end smoke runner. Wires a StubModelClient (bypassing PromptAssembler)
- * through the 10-check ValidationPipeline against mock fixtures. Prints two
- * reports: one PASS (default canned JSON) and one FAIL (date mismatch that
- * trips FACT_GROUNDING).
+ * End-to-end smoke runner. Drives the PromptAssembler + StubModelClient +
+ * 10-check ValidationPipeline against mock fixtures, printing:
+ *   - the full assembled prompt (system + user)
+ *   - the stub's canned AI response
+ *   - the ValidationReportDto for two scenarios (PASS and FAIL)
  *
  * Not a production code path. Not a JUnit test. Run with:
- *   ./mvnw -pl ca-api -am compile \
+ *   ./mvnw -q install -DskipTests
+ *   ./mvnw -pl ca-api -q \
  *     org.codehaus.mojo:exec-maven-plugin:3.5.0:java \
  *     -Dexec.mainClass=com.csob.ca.api.smoke.PipelineSmokeRunner
  */
@@ -60,10 +70,8 @@ public final class PipelineSmokeRunner {
 
     private PipelineSmokeRunner() { /* utility */ }
 
-    // FAIL case: same structure as StubModelClient.DEFAULT_CANNED_JSON, but the
-    // DATE factMention claims "2099-12-31" while the source is "2026-04-01".
-    // Everything else still grounds and cites correctly, so the FAIL is isolated
-    // to FACT_GROUNDING and provides a clean one-check failure demonstration.
+    private static final String PROMPT_VERSION = "v1";
+
     private static final String FAIL_CASE_JSON = """
             {
               "packId": "pack-test-0001",
@@ -102,43 +110,66 @@ public final class PipelineSmokeRunner {
         String checklistVersion = "v1.0";
 
         ObjectMapper mapper = buildObjectMapper();
+
+        // fixtures
+        PartyFactsDto partyFacts = mockPartyFacts(packId);
         List<ToolOutputDto> toolOutputs = mockToolOutputs(packId);
         ChecklistResultDto checklistResult = mockChecklistResult(packId, checklistVersion);
+
+        // assemble the prompt ONCE and print it - both scenarios reuse it
+        // (the stub ignores prompt content, but downstream ModelClient
+        // implementations will not).
+        PromptLoader promptLoader = new ClasspathPromptLoader();
+        PromptAssembler assembler = new TemplatePromptAssembler(promptLoader, mapper);
+        AiRequest assembledRequest = assembler.assemble(
+                packId, PROMPT_VERSION, partyFacts, checklistResult, toolOutputs);
+
+        banner("ASSEMBLED PROMPT (v1, produced by TemplatePromptAssembler)");
+        System.out.println("---- system ----");
+        System.out.println(assembledRequest.systemPrompt());
+        System.out.println("---- user ----");
+        System.out.println(assembledRequest.userPrompt());
+        System.out.println("---- meta ----");
+        System.out.println("packId         : " + assembledRequest.packId());
+        System.out.println("promptVersion  : " + assembledRequest.promptVersion());
+        System.out.println("user length    : " + assembledRequest.userPrompt().length() + " chars");
+        System.out.println("schema length  : " + assembledRequest.outputSchemaJson().length() + " chars");
+
         ValidationPipeline pipeline = buildValidationPipeline(mapper);
 
-        banner("SMOKE TEST 1 — PASS CASE (default canned JSON)");
+        banner("SMOKE TEST 1 - PASS CASE (default canned JSON)");
         runOne("PASS-SCENARIO", StubModelClient.DEFAULT_CANNED_JSON,
-                packId, checklistVersion, mapper, toolOutputs, checklistResult, pipeline);
+                packId, checklistVersion, mapper, toolOutputs, checklistResult,
+                assembledRequest, pipeline);
 
-        banner("SMOKE TEST 2 — FAIL CASE (DATE mismatch: 2099-12-31 vs source 2026-04-01)");
+        banner("SMOKE TEST 2 - FAIL CASE (DATE mismatch: 2099-12-31 vs source 2026-04-01)");
         runOne("FAIL-SCENARIO", FAIL_CASE_JSON,
-                packId, checklistVersion, mapper, toolOutputs, checklistResult, pipeline);
+                packId, checklistVersion, mapper, toolOutputs, checklistResult,
+                assembledRequest, pipeline);
     }
 
-    // ---- one execution of the slice: Stub → RawAiOutput → Pipeline → Report ----
+    // ---- one execution: Stub(AiRequest) -> RawAiOutput -> Pipeline -> Report ----
 
-    private static void runOne(String label, String cannedJson,
-                               String packId, String checklistVersion, ObjectMapper mapper,
-                               List<ToolOutputDto> toolOutputs, ChecklistResultDto checklistResult,
+    private static void runOne(String label,
+                               String cannedJson,
+                               String packId,
+                               String checklistVersion,
+                               ObjectMapper mapper,
+                               List<ToolOutputDto> toolOutputs,
+                               ChecklistResultDto checklistResult,
+                               AiRequest assembledRequest,
                                ValidationPipeline pipeline) {
         ModelClient stub = new StubModelClient(cannedJson);
-        AiRequest request = new AiRequest(
-                packId,
-                "v1",
-                "(prompt-assembler bypassed in smoke test)",
-                "(prompt-assembler bypassed in smoke test)",
-                "(schema asset bypassed in smoke test)");
 
-        AiResponse response = stub.invoke(request);
-        RawAiOutputDto rawAiOutput = buildRawAiOutput(response, request.promptVersion(), mapper);
+        AiResponse response = stub.invoke(assembledRequest);
+        RawAiOutputDto rawAiOutput = buildRawAiOutput(response, assembledRequest.promptVersion(), mapper);
 
         ValidationReportDto report = pipeline.validate(
                 packId, checklistVersion, toolOutputs, checklistResult, rawAiOutput);
 
-        System.out.println("[" + label + "] raw JSON length       : " + response.rawJsonText().length());
+        System.out.println("[" + label + "] stub raw JSON length  : " + response.rawJsonText().length());
         System.out.println("[" + label + "] parse status          : " + rawAiOutput.parseStatus());
         System.out.println("[" + label + "] report.status         : " + report.status());
-        System.out.println("[" + label + "] report.validatedAt    : " + report.validatedAt());
         System.out.println("[" + label + "] checks run            : " + report.checks().size());
         System.out.println();
         System.out.println("  per-check results:");
@@ -155,6 +186,25 @@ public final class PipelineSmokeRunner {
     }
 
     // ---- fixtures ----
+
+    private static PartyFactsDto mockPartyFacts(String packId) {
+        return new PartyFactsDto(
+                "party-0001",
+                PartyType.INDIVIDUAL,
+                "Alex Tan",
+                List.of(),
+                "SG",
+                List.of(),
+                new AddressDto("1 Raffles Place", null, "Singapore", null, "048616", "SG"),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                new IndividualDetailsDto(LocalDate.of(1985, 3, 22), List.of("SG")),
+                null,
+                Instant.parse("2026-04-15T00:00:00Z"),
+                "kyc-v1");
+    }
 
     private static List<ToolOutputDto> mockToolOutputs(String packId) {
         DocumentMetaDto doc = new DocumentMetaDto(
@@ -265,7 +315,6 @@ public final class PipelineSmokeRunner {
         System.out.println(line);
     }
 
-    /** Placeholder 64-char string that satisfies hash-typed DTO fields (DTO only validates non-null). */
     private static final String SIXTY_FOUR_ZEROS =
             "0000000000000000000000000000000000000000000000000000000000000000";
 }
