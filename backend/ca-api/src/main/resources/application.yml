@@ -19,7 +19,14 @@ ca:
   prompt:
     defaultVersion: v1
   ai:
-    provider: STUB       # STUB | ANTHROPIC (configure via application-{profile}.yml)
+    provider: STUB             # STUB | HTTP  (override per profile)
+    # HttpModelClient settings. Ignored when provider = STUB.
+    http:
+      endpoint: ""             # e.g. https://ai-proxy.internal/v1/ca/summarise
+      timeout-seconds: 30      # per-request HTTP timeout
+      max-attempts: 2          # inclusive; 1 = no retry, 3 = cap
+      auth-token: "${CA_AI_HTTP_TOKEN:}"   # load from env var; NEVER commit the real value
+    # Pipeline-level retry (reserved for InvokeAiStep; HttpModelClient has its own transport retry).
     retry:
       enabled: false
       maxAttempts: 1

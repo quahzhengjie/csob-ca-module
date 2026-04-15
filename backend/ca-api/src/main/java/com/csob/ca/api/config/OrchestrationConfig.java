@@ -5,6 +5,7 @@ import com.csob.ca.ai.prompt.ClasspathPromptLoader;
 import com.csob.ca.ai.prompt.PromptAssembler;
 import com.csob.ca.ai.prompt.PromptLoader;
 import com.csob.ca.ai.prompt.TemplatePromptAssembler;
+import com.csob.ca.ai.provider.HttpModelClient;
 import com.csob.ca.ai.provider.StubModelClient;
 import com.csob.ca.checklist.engine.ChecklistEngine;
 import com.csob.ca.checklist.engine.ChecklistEngineImpl;
@@ -40,9 +41,13 @@ import com.csob.ca.validation.support.Tokeniser;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.time.Duration;
 import java.util.List;
 
 /**
@@ -66,10 +71,48 @@ public class OrchestrationConfig {
         return new TemplatePromptAssembler(loader, objectMapper);
     }
 
+    /**
+     * ModelClient is property-driven:
+     *   ca.ai.provider = STUB  (default) → canned responses for local dev and smoke tests
+     *   ca.ai.provider = HTTP           → provider-agnostic HttpModelClient
+     *
+     * HTTP config keys (ignored when provider = STUB):
+     *   ca.ai.http.endpoint          (required for HTTP)
+     *   ca.ai.http.timeout-seconds   (default 30)
+     *   ca.ai.http.max-attempts      (default 2; clamped to [1,3])
+     *   ca.ai.http.auth-token        (optional; resolved from env var, NOT committed)
+     */
     @Bean
-    public ModelClient modelClient() {
-        // TODO: profile-switch between StubModelClient and the real provider.
-        return new StubModelClient();
+    public ModelClient modelClient(
+            @Value("${ca.ai.provider:STUB}") String provider,
+            @Value("${ca.ai.http.endpoint:}") String httpEndpoint,
+            @Value("${ca.ai.http.timeout-seconds:30}") int httpTimeoutSeconds,
+            @Value("${ca.ai.http.max-attempts:2}") int httpMaxAttempts,
+            @Value("${ca.ai.http.auth-token:}") String httpAuthToken,
+            ObjectMapper objectMapper) {
+        String normalised = (provider == null ? "STUB" : provider.trim().toUpperCase());
+        switch (normalised) {
+            case "STUB":
+                return new StubModelClient();
+            case "HTTP":
+                if (httpEndpoint == null || httpEndpoint.isBlank()) {
+                    throw new IllegalStateException(
+                            "ca.ai.provider=HTTP requires ca.ai.http.endpoint to be set");
+                }
+                HttpClient transport = HttpClient.newBuilder()
+                        .connectTimeout(Duration.ofSeconds(10))
+                        .build();
+                return new HttpModelClient(
+                        transport,
+                        URI.create(httpEndpoint),
+                        Duration.ofSeconds(httpTimeoutSeconds),
+                        httpMaxAttempts,
+                        httpAuthToken,
+                        objectMapper);
+            default:
+                throw new IllegalStateException(
+                        "Unknown ca.ai.provider '" + provider + "' (expected STUB or HTTP)");
+        }
     }
 
     // ----- Checklist engine -----
