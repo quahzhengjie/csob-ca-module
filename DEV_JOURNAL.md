@@ -5,6 +5,95 @@ implementation progress. Append-only. Newest entries at the top.
 
 ---
 
+## 2026-04-15 · Session 2 (build green; v1 validation chain complete)
+
+### Outcome at end of session
+- `mvn clean verify` green across all 9 modules (commit `1f4c239`).
+- v1 validation chain **complete**: 10 of 10 checks implemented
+  (commit `5645ac3`).
+- No contract, DTO, enum, schema, dependency, or wiring changes this
+  session — every edit is inside `ca-validation/check/*`.
+
+### Commits
+
+| Hash       | Title                                                                  |
+|------------|------------------------------------------------------------------------|
+| `1f4c239`  | build: align compiler target to Java 17; scaffold now builds clean     |
+| `5645ac3`  | feat(validation): complete v1 validation chain (10/10 checks implemented) |
+
+### Build decision
+- Lowered `<release>` 21 → 17 in parent POM (source/target props plus
+  the compiler-plugin config). **Why:** wrapper runs on Microsoft JDK 17
+  via `JAVA_HOME`; `<release>21</release>` failed with
+  `error: release version 21 not supported`. All source is Java 17-safe
+  (records, sealed interfaces, arrow-form switch expressions, `yield`,
+  `instanceof` pattern, `List.copyOf`). No code changes; matches the
+  original "Java 17+" brief; no environment edits.
+
+### Remaining validation checks — now implemented
+
+| #   | CheckId                  | Class                         | Key behaviour                                                                                                            |
+|-----|--------------------------|-------------------------------|--------------------------------------------------------------------------------------------------------------------------|
+| 2   | `PACK_BINDING`           | `PackBindingChecker`          | Compares `parsedPayload.packId` / `checklistVersion` to pipeline values; distinct codes `PACK_ID_MISMATCH` / `CHECKLIST_VERSION_MISMATCH`; detail carries expected + actual. |
+| 3   | `SECTION_WHITELIST`      | `SectionWhitelistChecker`     | EnumMap-based dedup; codes `INVALID_SECTION_HEADING` (null) and `DUPLICATE_SECTION_HEADING` (detail notes first-seen index). |
+| 4   | `LENGTH_GUARD`           | `LengthGuardChecker`          | Per-level caps (sections ≤ 5, sentences ≤ 8, text ≤ 320, citations ≤ 6, factMentions ≤ 16). Distinct code per cap; each detail reports `actual=…, allowed=…`. |
+| 5   | `FORMAT_GUARD`           | `FormatGuardChecker`          | Single `INVALID_FORMAT` code with varied details: `empty text`, `leading or trailing whitespace`, `contains newline`, `contains markdown '*'/'_/'`'`. Short-circuits null/whitespace-only text. |
+
+All four are **defence in depth**: the JSON Schema already catches most
+of these shapes. Explicit checks are kept so the validation report names
+exactly which rule tripped, and so any future weakening of the schema
+or DTO contracts surfaces at the validation surface.
+
+### Invariants preserved (unchanged this session)
+
+- Deterministic layer = system of record.
+- AI output is advisory; cannot populate any system-of-record field.
+- Every check is deterministic and never throws out of `check(...)`.
+- ValidationFailureDto fields remain `code`, `locator` (JSON Pointer),
+  `detail` (message) — user spec drifted twice to `path`/`message`;
+  kept as-is per earlier agreement to defer a naming-cleanup pass.
+- Class names retain `Checker` suffix until the naming cleanup pass.
+- Spring Boot starters only in `ca-api`.
+
+### Validation chain — final state
+
+| #   | CheckId                  | Status |
+|-----|--------------------------|--------|
+| 1   | `SCHEMA`                 | ✅     |
+| 2   | `PACK_BINDING`           | ✅     |
+| 3   | `SECTION_WHITELIST`      | ✅     |
+| 4   | `LENGTH_GUARD`           | ✅     |
+| 5   | `FORMAT_GUARD`           | ✅     |
+| 6   | `CITATION_PRESENCE`      | ✅     |
+| 7   | `CITATION_RESOLVABILITY` | ✅     |
+| 8   | `FACT_GROUNDING`         | ✅     |
+| 9   | `COVERAGE` (v1)          | ✅     |
+| 10  | `BANNED_VOCABULARY`      | ✅     |
+
+`DefaultValidationPipeline` no longer surfaces any `NOT_IMPLEMENTED`
+failures — every check has a real body.
+
+### Open items going into next session
+
+1. **Naming cleanup pass** — rename `*Checker` classes to `*Check` to
+   match user-facing spec naming; optionally rename
+   `ValidationFailureDto.locator`/`detail` to `path`/`message`. Queued
+   as an independent refactor commit. Will touch `OrchestrationConfig`
+   wiring lines and (for DTO rename) `ca-shared` + every call site.
+2. **networknt deprecation migration** — `SchemaValidatorsConfig` +
+   `setPathType(...)` are deprecated in favour of the builder API.
+   Behaviour-preserving refactor inside `SchemaValidator` only.
+3. **ArchUnit module-boundary tests** — formalise the rules in
+   `README.md` so CI blocks forbidden imports.
+4. **JSON Schema byte-equality CI gate** between `ca-validation/schemas`
+   and `ca-ai-client/prompts/v1/output_schema.json`.
+5. Still untouched: `ChecklistEngineImpl`, tool adapters,
+   `PromptLoader` / `PromptAssembler` / real `ModelClient`,
+   `JpaPackRepository`, `DbAuditWriter`, Flyway `V1` DDL, `SecurityConfig`,
+   frontend.
+
+---
+
 ## 2026-04-14 · Session 1 (initial scaffold through v1 validation chain)
 
 ### Outcome at end of session
