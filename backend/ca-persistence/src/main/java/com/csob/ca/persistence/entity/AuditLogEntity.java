@@ -39,5 +39,25 @@ public class AuditLogEntity {
     @Column(name = "occurred_at", nullable = false)
     private Instant occurredAt;
 
-    protected AuditLogEntity() { /* JPA */ }
+    public AuditLogEntity() { /* JPA + repository construction */ }
+
+    // ---- getters ----
+
+    public String  getEventId()    { return eventId; }
+    public String  getPackId()     { return packId; }
+    public String  getEventType()  { return eventType; }
+    public String  getEventJson()  { return eventJson; }
+    public String  getPrevHash()   { return prevHash; }
+    public String  getHash()       { return hash; }
+    public Instant getOccurredAt() { return occurredAt; }
+
+    // ---- setters (used by DbAuditWriter only at insert time) ----
+
+    public void setEventId(String v)      { this.eventId = v; }
+    public void setPackId(String v)       { this.packId = v; }
+    public void setEventType(String v)    { this.eventType = v; }
+    public void setEventJson(String v)    { this.eventJson = v; }
+    public void setPrevHash(String v)     { this.prevHash = v; }
+    public void setHash(String v)         { this.hash = v; }
+    public void setOccurredAt(Instant v)  { this.occurredAt = v; }
 }

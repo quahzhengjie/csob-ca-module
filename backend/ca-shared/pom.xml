@@ -17,6 +17,14 @@
         ZERO external dependencies. ZERO Spring imports. ZERO business logic.
     </description>
 
-    <!-- INVARIANT: this module must remain dependency-free.
-         It is the contract surface that every other module compiles against. -->
+    <!-- INVARIANT: this module remains nearly dependency-free. The single
+         allowed external is jackson-annotations (annotation-only, no runtime
+         engine), required so the sealed ToolPayload hierarchy round-trips
+         through Jackson polymorphic deserialisation when persisted as JSON. -->
+    <dependencies>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
+        </dependency>
+    </dependencies>
 </project>

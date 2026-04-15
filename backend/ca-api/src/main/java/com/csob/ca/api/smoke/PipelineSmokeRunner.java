@@ -87,38 +87,9 @@ public final class PipelineSmokeRunner {
 
     private static final String PROMPT_VERSION = "v1";
 
-    private static final String FAIL_CASE_JSON = """
-            {
-              "packId": "pack-test-0001",
-              "checklistVersion": "v1.0",
-              "modelId": "stub-model",
-              "modelVersion": "stub-1.0",
-              "generatedAt": "2026-04-15T00:00:00Z",
-              "sections": [
-                {
-                  "heading": "DOCUMENTS",
-                  "sentences": [
-                    {
-                      "text": "Finding R-DOC-EXPIRED: document doc-001 expires on 2099-12-31.",
-                      "citations": [
-                        { "sourceType": "CHECKLIST_FINDING","sourceId": "R-DOC-EXPIRED",  "fieldPath": "ruleId"     },
-                        { "sourceType": "DOCUMENT_META",    "sourceId": "doc-001",        "fieldPath": "documentId" },
-                        { "sourceType": "DOCUMENT_META",    "sourceId": "doc-001",        "fieldPath": "expiresOn"  }
-                      ],
-                      "factMentions": [
-                        { "value": "R-DOC-EXPIRED", "kind": "IDENTIFIER",
-                          "citation": { "sourceType": "CHECKLIST_FINDING", "sourceId": "R-DOC-EXPIRED", "fieldPath": "ruleId" } },
-                        { "value": "doc-001", "kind": "IDENTIFIER",
-                          "citation": { "sourceType": "DOCUMENT_META", "sourceId": "doc-001", "fieldPath": "documentId" } },
-                        { "value": "2099-12-31", "kind": "DATE",
-                          "citation": { "sourceType": "DOCUMENT_META", "sourceId": "doc-001", "fieldPath": "expiresOn" } }
-                      ]
-                    }
-                  ]
-                }
-              ]
-            }
-            """;
+    // FAIL fixture moved to StubModelClient.FAIL_TEMPLATE — single source of truth
+    // for the canned scenarios. Smoke runner references both via the stub's
+    // public static constants when it needs the JSON shape directly.
 
     public static void main(String[] args) throws Exception {
         String packId = "pack-test-0001";
@@ -159,13 +130,13 @@ public final class PipelineSmokeRunner {
 
         ValidationPipeline pipeline = buildValidationPipeline(mapper);
 
-        banner("SMOKE TEST 1 - PASS CASE (default canned JSON)");
-        runOne("PASS-SCENARIO", StubModelClient.DEFAULT_CANNED_JSON,
+        banner("SMOKE TEST 1 - PASS CASE (StubModelClient.Scenario.PASS, packId templated)");
+        runOne("PASS-SCENARIO", StubModelClient.PASS_TEMPLATE,
                 packId, checklistVersion, mapper, toolOutputs, checklistResult,
                 assembledRequest, pipeline);
 
-        banner("SMOKE TEST 2 - FAIL CASE (DATE mismatch: 2099-12-31 vs source 2026-04-01)");
-        runOne("FAIL-SCENARIO", FAIL_CASE_JSON,
+        banner("SMOKE TEST 2 - FAIL CASE (StubModelClient.Scenario.FAIL — DATE mismatch)");
+        runOne("FAIL-SCENARIO", StubModelClient.FAIL_TEMPLATE,
                 packId, checklistVersion, mapper, toolOutputs, checklistResult,
                 assembledRequest, pipeline);
 
@@ -177,12 +148,12 @@ public final class PipelineSmokeRunner {
 
         banner("PIPELINE COORDINATOR - PASS CASE (via PipelineCoordinator.run)");
         CaPackDto passPack = runViaCoordinator(packId, partyId, checklistVersion, PROMPT_VERSION,
-                partyFacts, fixedClock, mapper, StubModelClient.DEFAULT_CANNED_JSON);
+                partyFacts, fixedClock, mapper, StubModelClient.PASS_TEMPLATE);
         reportPack("COORD-PASS", passPack);
 
         banner("PIPELINE COORDINATOR - FAIL CASE (via PipelineCoordinator.run)");
         CaPackDto failPack = runViaCoordinator(packId, partyId, checklistVersion, PROMPT_VERSION,
-                partyFacts, fixedClock, mapper, FAIL_CASE_JSON);
+                partyFacts, fixedClock, mapper, StubModelClient.FAIL_TEMPLATE);
         reportPack("COORD-FAIL", failPack);
 
         banner("EQUIVALENCE SUMMARY (coordinator vs manual)");

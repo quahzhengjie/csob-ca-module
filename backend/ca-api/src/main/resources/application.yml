@@ -2,6 +2,32 @@ spring:
   application:
     name: csob-ca
 
+  # ---- Persistence (H2 for this milestone) ----------------------------------
+  datasource:
+    url: "jdbc:h2:mem:csob-ca;DB_CLOSE_DELAY=-1;MODE=LEGACY"
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+
+  jpa:
+    hibernate:
+      # Flyway owns schema; Hibernate must not touch it.
+      ddl-auto: none
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+        format_sql: false
+    open-in-view: false
+
+  flyway:
+    enabled: true
+    locations: "classpath:db/migration"
+    baseline-on-migrate: false
+
+logging:
+  level:
+    com.csob.ca: INFO
+
 server:
   port: 8082
   servlet:
@@ -25,7 +51,9 @@ ca:
       # by env var (SPRING_CONFIG_IMPORT).
       # When CsobDocumentMetadataSource lands, this key becomes the filesystem
       # fallback path and a new ca.tools.documents.provider key will switch sources.
-      root: "./sample-data/documents"
+      # Default is relative to spring-boot-maven-plugin's workingDirectory
+      # (the ca-api module dir), so ../sample-data/documents = backend/sample-data/documents.
+      root: "../sample-data/documents"
   ai:
     provider: STUB             # STUB | HTTP  (override per profile)
     # HttpModelClient settings. Ignored when provider = STUB.

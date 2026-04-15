@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
  * guard before persisting.
  */
 @RestController
-@RequestMapping("/api/ca/packs/{packId}/review")
+@RequestMapping("/ca/packs/{packId}/review")  // server.servlet.context-path=/api is prepended by Tomcat
 public class ReviewController {
 
     @PostMapping("/findings/{ruleId}/acknowledge")

@@ -5,6 +5,124 @@ implementation progress. Append-only. Newest entries at the top.
 
 ---
 
+## 2026-04-15 · Session 4 (real coordinator + minimal persistence + replay)
+
+### Outcome at end of session
+
+End-to-end live HTTP path is real:
+
+```
+POST /api/ca/packs?partyId=…&checklistVersion=v1.0&promptVersion=v1
+  → CaPackController.createPack
+  → PipelineCoordinator.run
+      → InvokeToolsStep        (filesystem-backed DocumentMetadataSource via DefaultToolInvoker)
+      → EvaluateChecklistStep  (DocumentExpiryRule against fixed Clock — was system clock at runtime)
+      → InvokeAiStep           (PromptAssembler → StubModelClient; graceful-failure fallback)
+      → ValidateAiStep         (10-check ValidationPipeline)
+      → PersistStep            (writes CaPackEntity row + 5 hash-chained audit events)
+  ← 201 Created with full CaPackDto
+
+GET  /api/ca/packs/{packId}            → 200, full CaPackDto round-tripped from H2
+POST /api/ca/packs/{packId}/replay     → 200, fresh ValidationReportDto (no model, no tools)
+```
+
+`mvn clean verify` green; `mvn -pl ca-api spring-boot:run` boots cleanly with H2 + Flyway V1; all three endpoints exercised live during the session. Replay verdict matched the originally-stored verdict deterministically (REJECTED == REJECTED on the demonstration pack).
+
+### Commits landing this session
+
+| Hash       | Title                                                                                       |
+|------------|---------------------------------------------------------------------------------------------|
+| `5fc0d8a`  | feat(orchestration): real PipelineCoordinator end-to-end (replaces manual smoke wiring)     |
+| _pending_  | feat(persistence): minimal H2-backed persistence + audit chain + replay endpoint            |
+
+### Phase 2E — PipelineCoordinator real wiring (`5fc0d8a`)
+
+Five files real, two skeletons renamed and implemented, two skeletons deleted from the path:
+
+- **`PipelineCoordinator.run(...)`** — fixed-order step iteration with one try/catch per step. Returns a fully-populated `CaPackDto`. Caller-supplied `partyFacts` and `createdBy` (no PartyTool yet).
+- **`InvokeToolsStep`** (was `GatherDataStep`) — fixed `[DOCUMENT_METADATA]` ToolId list today. Other ToolIds added to the list as their adapters land; ordering stable per commit.
+- **`EvaluateChecklistStep`** (was `RunChecklistStep`) — calls `ChecklistEngine.evaluate`.
+- **`InvokeAiStep`** — assembler → model client → Jackson best-effort parse → `RawAiOutputDto`. **NEVER throws**; on RuntimeException synthesises a MALFORMED `RawAiOutputDto` carrying the error so `ValidateAiStep` still runs.
+- **`ValidateAiStep`** — runs `ValidationPipeline.validate`. Always-runs invariant.
+- **`StepContext`** — the explicit data conduit. No hidden static state.
+- **`OrchestrationConfig.pipelineCoordinator`** — bean parameters now match what's actually wired (no PackRepository / AuditWriter at this commit; that came in Phase 2F).
+- **`CaPackController.createPack`** — calls coordinator end-to-end, returns 201 + `CaPackDto`.
+- **`PipelineSmokeRunner`** — kept as regression baseline. Adds two coordinator-driven scenarios alongside the manual ones; final equivalence summary printed at the end of every run.
+
+PipelineSmokeRunner output (this session): **manual PASS == coord PASS == VALID, manual FAIL == coord FAIL == REJECTED** with identical `FACT_NOT_GROUNDED` failure detail.
+
+### Phase 2F — Minimal persistence + audit + replay (this milestone)
+
+Decisions taken at the start of the milestone (locked):
+- **H2 in-memory** for this milestone; MSSQL deferred to Phase 3.
+- **Step-level audit**: one event per pipeline step + `PACK_CREATED` (5 events per pack).
+- **Replay = validation-only**: `POST /{packId}/replay` re-runs the 10 checks against the stored `RawAiOutput` + frozen `ToolOutputs`. Never re-calls the model or tools.
+
+Schema (Flyway `V1__init_ca_schema.sql`):
+- **`csob_ca_packs`** — one row per pack. Scalar columns for the queryable surface (packId, partyId, status, versions, modelId, hash root). Nested DTOs serialise to CLOB columns via Jackson at the repository boundary (`party_facts_json`, `checklist_result_json`, `tool_outputs_json`, `raw_ai_output_json`, `validation_report_json`, `final_summary_json`, `reviewer_actions_json`, `sign_off_chain_json`).
+- **`csob_ca_audit_log`** — append-only: `event_id, pack_id, event_type, event_json, prev_hash, hash, occurred_at`. Indexed on `pack_id` and on `(pack_id, occurred_at)`.
+
+Six unused entity skeletons (`ChecklistFindingEntity`, `FinalSummaryEntity`, `RawAiOutputEntity`, `ReviewerActionEntity`, `ToolOutputEntity`, `ValidationReportEntity`) **deleted** so Hibernate doesn't try to validate non-existent tables. JSON-on-CLOB scaling decision: when normalisation is needed for queryability, those entities can be re-introduced and a Flyway V2 migration backfills.
+
+Audit hash chain (`DbAuditWriter`):
+```
+prev_hash = last persisted event.hash for this packId  (null in row, ZERO_64 in SHA input for first event)
+hash      = sha256_lower_hex( prev_hash || event.detailsJson )   // UTF-8 byte concat
+```
+Append-only in application code: `JpaPackRepository.persistPack` throws `IllegalStateException` if a row already exists for `packId`. Operator tooling can still patch under authority — DB does not hard-lock.
+
+Audit events emitted by PersistStep (deterministic detailsJson per event; ordering is contract):
+1. `INVOKE_TOOLS_COMPLETED` — `{"toolOutputCount":1}`
+2. `EVALUATE_CHECKLIST_COMPLETED` — `{"checklistVersion":"v1.0","total":1,"passed":0,"failed":1,"missing":0,"notApplicable":0}`
+3. `INVOKE_AI_COMPLETED` — `{"modelId":"…","modelVersion":"…","parseStatus":"PARSED|MALFORMED"}`
+4. `VALIDATE_AI_COMPLETED` — `{"status":"VALID|REJECTED","totalChecks":10,"failedChecks":n}`
+5. `PACK_CREATED` — `{"packId":"…","partyId":"…","status":"VALIDATED"}`
+
+API surface added / completed:
+- `POST /api/ca/packs` — runs pipeline + persists + returns 201 with `CaPackDto`.
+- `GET  /api/ca/packs/{packId}` — reads from H2, deserialises full DTO via Jackson.
+- `POST /api/ca/packs/{packId}/replay` — validation-only re-run; loads `rawAiOutput` + `toolOutputs` from H2; returns fresh `ValidationReportDto`. Does NOT touch `ModelClient` or `ToolInvoker`.
+
+### Decisions made / problems found during integration
+
+- **`@Transactional` impls cannot be `final`.** Spring's CGLIB AOP needs to subclass to proxy. Removed `final` from `JpaPackRepository` and `DbAuditWriter`.
+- **Sealed `ToolPayload` did not round-trip through Jackson.** Resolved with `@JsonTypeInfo(use = JsonTypeInfo.Id.DEDUCTION)` + `@JsonSubTypes` on the sealed interface — no wire-format type tag (Jackson infers from the unique top-level field per subtype). `ca-shared` now declares `jackson-annotations` (annotation-only). DTO contract unchanged structurally.
+- **`server.servlet.context-path=/api` is stripped before Spring matchers run.** Two consequences caught and fixed:
+  - `SecurityConfig.requestMatchers("/api/ca/**")` matched nothing → fixed to `/ca/**`.
+  - `CaPackController` and `ReviewController` had `@RequestMapping("/api/ca/...")` → double-prefixed URLs → fixed to `/ca/...`.
+- **`spring-boot-maven-plugin` runs from the module dir (`ca-api/`), not the reactor root.** `ca.tools.documents.root` defaulted to `./sample-data/documents` resolved to a non-existent path → fixed default to `../sample-data/documents`.
+- **`GlobalExceptionHandler` was still skeleton** (throwing `UnsupportedOperationException`). Replaced with real RFC-7807 `ProblemDetail` bodies for `PipelineException`, `IllegalStateException`, `IllegalArgumentException`. Stack traces go to logs only; codes (`PIPELINE_STEP_FAILED`, `ILLEGAL_STATE`, `BAD_REQUEST`) on the response body.
+- **`SecurityConfig` is dev-permit-all for `/ca/**`, `/actuator/**`, `/error`.** Loud `// DEV/LOCAL ONLY` callouts in code. `@EnableWebSecurity` added explicitly. Production must replace with: authenticated principal, role/permission gating, CSRF, 4-eyes for sign-off.
+
+### v1 stub limitation surfaced by the live demo
+
+`POST /api/ca/packs` produces a freshly-generated `packId` (e.g. `pack-1d229133`), but `StubModelClient.DEFAULT_CANNED_JSON` is hardcoded with `pack-test-0001`. The validation pipeline correctly catches this with `PACK_BINDING / PACK_ID_MISMATCH` — proof that the chain works. Replay reproduces the exact same finding deterministically. To get a clean live PASS today, the stub would need to template `packId` from the request — flagged for the next stub-templating refinement.
+
+### Invariants re-verified (still intact)
+
+- Deterministic layer is system of record. ✓
+- AI is summarisation only; cannot populate any system-of-record field. ✓
+- Every validation check is deterministic and never throws. ✓
+- Single bounded AI call per pack. ✓
+- No agentic AI, no autonomous tool selection, no OCR, no BLOB retrieval. ✓
+- Tool adapters read-only and deterministic. ✓
+- Audit log append-only and hash-chained. ✓ (now real)
+- DTO contracts unchanged structurally. ✓ (`ToolPayload` got annotation-only metadata for Jackson DEDUCTION — no field, no wire format change)
+
+### Open items going into next session
+
+1. **Stub packId templating** — `StubModelClient` should echo `request.packId()` in its canned JSON so live demos produce VALID. Trivial change.
+2. **MSSQL switch** — H2 was the milestone scope; MSSQL is a connection-string + Flyway-dialect change, plus a Testcontainers/integration test for confidence.
+3. **Reviewer flow + 4-eyes** — `ReviewController` is still skeleton; `reviewerActions` and `signOffChain` lists are always empty.
+4. **`SecurityConfig` hardening** — replace dev-permit-all with authenticated principal extraction and per-endpoint role gating before any non-local deployment.
+5. **CSOB-backed `DocumentMetadataSource`** (Phase 3) — single-class swap behind the existing port.
+6. **More checklist rules** — engine + version resolver shape support it; `R-DOC-EXPIRED` is the only real rule today.
+7. **ArchUnit module-boundary tests** — the dependency graph is right; nothing yet enforces "controllers don't import `com.csob.ca.persistence.*`" beyond code review.
+8. **JSON Schema byte-equality CI gate** — `ca-validation/schemas/ai-output.schema.json` ↔ `ca-ai-client/prompts/v1/output_schema.json`. Still drift-prone.
+9. **`networknt` deprecation migration** — `SchemaValidatorsConfig` builder API.
+
+---
+
 ## 2026-04-15 · Session 3 (end-to-end; real prompts, real HTTP client, real tool, first rule)
 
 ### Outcome at end of session

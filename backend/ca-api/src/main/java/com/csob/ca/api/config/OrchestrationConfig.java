@@ -16,8 +16,17 @@ import com.csob.ca.orchestration.policy.RetryPolicy;
 import com.csob.ca.orchestration.steps.EvaluateChecklistStep;
 import com.csob.ca.orchestration.steps.InvokeAiStep;
 import com.csob.ca.orchestration.steps.InvokeToolsStep;
+import com.csob.ca.orchestration.steps.PersistStep;
 import com.csob.ca.orchestration.steps.PipelineStep;
 import com.csob.ca.orchestration.steps.ValidateAiStep;
+import com.csob.ca.persistence.audit.AuditLogJpaRepository;
+import com.csob.ca.persistence.audit.AuditReader;
+import com.csob.ca.persistence.audit.AuditWriter;
+import com.csob.ca.persistence.audit.DbAuditReader;
+import com.csob.ca.persistence.audit.DbAuditWriter;
+import com.csob.ca.persistence.repository.CaPackJpaRepository;
+import com.csob.ca.persistence.repository.JpaPackRepository;
+import com.csob.ca.persistence.repository.PackRepository;
 import com.csob.ca.tools.adapter.DefaultToolInvoker;
 import com.csob.ca.tools.adapter.DocumentMetadataSource;
 import com.csob.ca.tools.adapter.DocumentMetadataTool;
@@ -202,16 +211,31 @@ public class OrchestrationConfig {
         return new DefaultValidationPipeline(ordered);
     }
 
+    // ----- Persistence (v1: H2-backed, minimal) -----
+    @Bean
+    public PackRepository packRepository(CaPackJpaRepository caPackJpaRepository,
+                                         ObjectMapper objectMapper) {
+        return new JpaPackRepository(caPackJpaRepository, objectMapper);
+    }
+
+    @Bean
+    public AuditWriter auditWriter(AuditLogJpaRepository auditLogJpaRepository) {
+        return new DbAuditWriter(auditLogJpaRepository);
+    }
+
+    @Bean
+    public AuditReader auditReader(AuditLogJpaRepository auditLogJpaRepository) {
+        return new DbAuditReader(auditLogJpaRepository);
+    }
+
     // ----- Pipeline coordinator -----
     /**
      * Fixed, backend-controlled pipeline:
-     *   INVOKE_TOOLS → EVALUATE_CHECKLIST → INVOKE_AI → VALIDATE_AI
+     *   INVOKE_TOOLS → EVALUATE_CHECKLIST → INVOKE_AI → VALIDATE_AI → PERSIST
      *
-     * PersistStep is intentionally NOT wired today — persistence is a
-     * Phase-3 deliverable and the {@code PackRepository} / {@code AuditWriter}
-     * beans don't exist yet. The coordinator returns a fully-populated
-     * CaPackDto; callers (controllers) can persist it later without
-     * changing the step graph.
+     * PersistStep writes the pack aggregate and emits the per-step audit
+     * trail. Pipeline output (the CaPackDto returned by
+     * PipelineCoordinator#run) is unchanged by the addition.
      */
     @Bean
     public PipelineCoordinator pipelineCoordinator(ToolInvoker toolInvoker,
@@ -219,13 +243,16 @@ public class OrchestrationConfig {
                                                    PromptAssembler promptAssembler,
                                                    ModelClient modelClient,
                                                    ValidationPipeline validationPipeline,
+                                                   PackRepository packRepository,
+                                                   AuditWriter auditWriter,
                                                    ObjectMapper objectMapper,
                                                    Clock clock) {
         List<PipelineStep> steps = List.of(
                 new InvokeToolsStep(toolInvoker),
                 new EvaluateChecklistStep(checklistEngine),
                 new InvokeAiStep(promptAssembler, modelClient, RetryPolicy.disabled(), objectMapper, clock),
-                new ValidateAiStep(validationPipeline)
+                new ValidateAiStep(validationPipeline),
+                new PersistStep(packRepository, auditWriter, clock)
         );
         return new PipelineCoordinator(steps, clock);
     }
