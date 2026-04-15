@@ -27,6 +27,7 @@ import com.csob.ca.persistence.audit.DbAuditWriter;
 import com.csob.ca.persistence.repository.CaPackJpaRepository;
 import com.csob.ca.persistence.repository.JpaPackRepository;
 import com.csob.ca.persistence.repository.PackRepository;
+import com.csob.ca.tools.adapter.CsobDocumentMetadataSource;
 import com.csob.ca.tools.adapter.DefaultToolInvoker;
 import com.csob.ca.tools.adapter.DocumentMetadataSource;
 import com.csob.ca.tools.adapter.DocumentMetadataTool;
@@ -131,15 +132,55 @@ public class OrchestrationConfig {
 
     // ----- Tool layer (source → adapter → invoker) -----
     /**
-     * Document metadata source. Today: filesystem-backed. Tomorrow: swap
-     * this single bean for a CsobDocumentMetadataSource implementing the
-     * same {@link DocumentMetadataSource} interface — nothing else changes.
+     * DocumentMetadataSource is property-driven:
+     *   ca.tools.documents.provider = FILESYSTEM (default) → local JSON fixtures
+     *   ca.tools.documents.provider = CSOB                 → CsobDocumentMetadataSource
+     *
+     * The CSOB source is structurally wired but its HTTP body is not
+     * implemented yet (awaiting the CSOB endpoint contract). Selecting CSOB
+     * without a {@code ca.tools.documents.csob.base-url} configured fails
+     * loudly at startup; selecting it with a base URL boots the app, but
+     * the first call to {@code getDocumentsForParty} throws
+     * {@link UnsupportedOperationException} with a clear message.
+     *
+     * Filesystem stays the default so smoke / local / CI keep working.
+     * The downstream {@link DocumentMetadataToolAdapter}, {@link ToolInvoker},
+     * pipeline, validation, and persistence are unchanged on swap.
      */
     @Bean
     public DocumentMetadataSource documentMetadataSource(
-            @Value("${ca.tools.documents.root:./sample-data/documents}") String rootPath,
+            @Value("${ca.tools.documents.provider:FILESYSTEM}") String provider,
+            @Value("${ca.tools.documents.root:./sample-data/documents}") String fsRoot,
+            @Value("${ca.tools.documents.csob.base-url:}") String csobBaseUrl,
+            @Value("${ca.tools.documents.csob.timeout-seconds:30}") int csobTimeoutSeconds,
+            @Value("${ca.tools.documents.csob.max-attempts:2}") int csobMaxAttempts,
+            @Value("${ca.tools.documents.csob.auth-token:}") String csobAuthToken,
             ObjectMapper objectMapper) {
-        return new FilesystemDocumentMetadataSource(Paths.get(rootPath), objectMapper);
+        String normalised = (provider == null) ? "FILESYSTEM" : provider.trim().toUpperCase();
+        switch (normalised) {
+            case "FILESYSTEM":
+                return new FilesystemDocumentMetadataSource(Paths.get(fsRoot), objectMapper);
+            case "CSOB":
+                if (csobBaseUrl == null || csobBaseUrl.isBlank()) {
+                    throw new IllegalStateException(
+                            "ca.tools.documents.provider=CSOB requires "
+                                    + "ca.tools.documents.csob.base-url to be set");
+                }
+                HttpClient csobHttp = HttpClient.newBuilder()
+                        .connectTimeout(Duration.ofSeconds(10))
+                        .build();
+                return new CsobDocumentMetadataSource(
+                        csobHttp,
+                        URI.create(csobBaseUrl),
+                        Duration.ofSeconds(csobTimeoutSeconds),
+                        csobMaxAttempts,
+                        csobAuthToken,
+                        objectMapper);
+            default:
+                throw new IllegalStateException(
+                        "Unknown ca.tools.documents.provider '" + provider
+                                + "' (expected FILESYSTEM or CSOB)");
+        }
     }
 
     @Bean

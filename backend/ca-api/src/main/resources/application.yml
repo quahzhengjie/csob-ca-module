@@ -46,14 +46,31 @@ ca:
     defaultVersion: v1
   tools:
     documents:
-      # Filesystem-backed document metadata source. Each party's docs live in
-      # {root}/{partyId}.json. Overridden per profile (dev/staging/prod) or
-      # by env var (SPRING_CONFIG_IMPORT).
-      # When CsobDocumentMetadataSource lands, this key becomes the filesystem
-      # fallback path and a new ca.tools.documents.provider key will switch sources.
+      # ----- source selection ----------------------------------------------
+      # FILESYSTEM (default) | CSOB
+      # FILESYSTEM keeps smoke + local dev working without external creds.
+      # CSOB selects CsobDocumentMetadataSource — STRUCTURE ONLY today; calls
+      # throw UnsupportedOperationException until the CSOB endpoint contract
+      # lands. See CsobDocumentMetadataSource Javadoc for the exact mapping
+      # that needs to be implemented.
+      provider: FILESYSTEM
+
+      # ----- FILESYSTEM provider config ------------------------------------
+      # Each party's docs live in {root}/{partyId}.json.
       # Default is relative to spring-boot-maven-plugin's workingDirectory
       # (the ca-api module dir), so ../sample-data/documents = backend/sample-data/documents.
       root: "../sample-data/documents"
+
+      # ----- CSOB provider config (placeholders — NOT YET OPERATIONAL) -----
+      # Fill these in when the CSOB integration team shares the API contract.
+      # Until then, leaving base-url empty AND provider=FILESYSTEM keeps
+      # everything working; setting provider=CSOB without base-url fails
+      # loudly at startup.
+      csob:
+        base-url: ""             # e.g. https://csob-internal.example.com/api/documents
+        timeout-seconds: 30      # per-request HTTP timeout
+        max-attempts: 2          # inclusive; 1 = no retry, 3 = cap
+        auth-token: "${CSOB_DOCUMENTS_AUTH_TOKEN:}"   # env var; NEVER commit the real value
   ai:
     provider: STUB             # STUB | HTTP  (override per profile)
     # HttpModelClient settings. Ignored when provider = STUB.
