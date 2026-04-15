@@ -20,6 +20,11 @@ import com.csob.ca.orchestration.steps.RunChecklistStep;
 import com.csob.ca.orchestration.steps.ValidateAiStep;
 import com.csob.ca.persistence.audit.AuditWriter;
 import com.csob.ca.persistence.repository.PackRepository;
+import com.csob.ca.tools.adapter.DefaultToolInvoker;
+import com.csob.ca.tools.adapter.DocumentMetadataSource;
+import com.csob.ca.tools.adapter.DocumentMetadataTool;
+import com.csob.ca.tools.adapter.DocumentMetadataToolAdapter;
+import com.csob.ca.tools.adapter.FilesystemDocumentMetadataSource;
 import com.csob.ca.tools.adapter.ToolInvoker;
 import com.csob.ca.validation.DefaultValidationPipeline;
 import com.csob.ca.validation.ValidationPipeline;
@@ -47,6 +52,7 @@ import org.springframework.context.annotation.Configuration;
 
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.List;
 
@@ -113,6 +119,34 @@ public class OrchestrationConfig {
                 throw new IllegalStateException(
                         "Unknown ca.ai.provider '" + provider + "' (expected STUB or HTTP)");
         }
+    }
+
+    // ----- Tool layer (source → adapter → invoker) -----
+    /**
+     * Document metadata source. Today: filesystem-backed. Tomorrow: swap
+     * this single bean for a CsobDocumentMetadataSource implementing the
+     * same {@link DocumentMetadataSource} interface — nothing else changes.
+     */
+    @Bean
+    public DocumentMetadataSource documentMetadataSource(
+            @Value("${ca.tools.documents.root:./sample-data/documents}") String rootPath,
+            ObjectMapper objectMapper) {
+        return new FilesystemDocumentMetadataSource(Paths.get(rootPath), objectMapper);
+    }
+
+    @Bean
+    public DocumentMetadataTool documentMetadataTool(DocumentMetadataSource source) {
+        return new DocumentMetadataToolAdapter(source);
+    }
+
+    /**
+     * Generic dispatcher. Other tool types (PARTY / SCREENING / RELATED_PARTIES)
+     * are not yet implemented and are passed as null — DefaultToolInvoker
+     * throws UnsupportedOperationException when invoked for those ToolIds.
+     */
+    @Bean
+    public ToolInvoker toolInvoker(DocumentMetadataTool documentMetadataTool) {
+        return new DefaultToolInvoker(null, documentMetadataTool, null, null);
     }
 
     // ----- Checklist engine -----

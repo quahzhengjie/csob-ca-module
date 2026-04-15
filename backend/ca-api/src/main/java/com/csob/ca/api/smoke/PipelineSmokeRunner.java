@@ -13,14 +13,18 @@ import com.csob.ca.shared.dto.AiSummaryPayloadDto;
 import com.csob.ca.shared.dto.ChecklistCompletionDto;
 import com.csob.ca.shared.dto.ChecklistFindingDto;
 import com.csob.ca.shared.dto.ChecklistResultDto;
-import com.csob.ca.shared.dto.DocumentMetaDto;
 import com.csob.ca.shared.dto.EvidenceDto;
 import com.csob.ca.shared.dto.IndividualDetailsDto;
 import com.csob.ca.shared.dto.PartyFactsDto;
 import com.csob.ca.shared.dto.RawAiOutputDto;
 import com.csob.ca.shared.dto.ToolOutputDto;
 import com.csob.ca.shared.dto.ValidationReportDto;
-import com.csob.ca.shared.dto.tool.DocumentMetadataToolPayload;
+import com.csob.ca.tools.adapter.DefaultToolInvoker;
+import com.csob.ca.tools.adapter.DocumentMetadataSource;
+import com.csob.ca.tools.adapter.DocumentMetadataTool;
+import com.csob.ca.tools.adapter.DocumentMetadataToolAdapter;
+import com.csob.ca.tools.adapter.FilesystemDocumentMetadataSource;
+import com.csob.ca.tools.adapter.ToolInvoker;
 import com.csob.ca.shared.enums.ParseStatus;
 import com.csob.ca.shared.enums.PartyType;
 import com.csob.ca.shared.enums.RuleSeverity;
@@ -49,6 +53,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -113,7 +119,7 @@ public final class PipelineSmokeRunner {
 
         // fixtures
         PartyFactsDto partyFacts = mockPartyFacts(packId);
-        List<ToolOutputDto> toolOutputs = mockToolOutputs(packId);
+        List<ToolOutputDto> toolOutputs = loadToolOutputs(packId, mapper);
         ChecklistResultDto checklistResult = mockChecklistResult(packId, checklistVersion);
 
         // assemble the prompt ONCE and print it - both scenarios reuse it
@@ -206,26 +212,32 @@ public final class PipelineSmokeRunner {
                 "kyc-v1");
     }
 
-    private static List<ToolOutputDto> mockToolOutputs(String packId) {
-        DocumentMetaDto doc = new DocumentMetaDto(
-                "doc-001",
-                "PASSPORT",
-                LocalDate.of(2020, 1, 1),
-                LocalDate.of(2026, 4, 1),
-                Instant.parse("2026-01-01T00:00:00Z"),
-                10,
-                "application/pdf",
-                SIXTY_FOUR_ZEROS);
+    /**
+     * Load tool outputs via the real filesystem-backed source and adapter,
+     * dispatched through DefaultToolInvoker — exactly what the pipeline
+     * will do in production (minus a CSOB-backed source instead of a
+     * filesystem one). No hardcoded fixtures in the smoke runner anymore.
+     *
+     * The sample-data directory location defaults to "./sample-data/documents"
+     * relative to user.dir. Maven `exec:java` preserves user.dir from the
+     * shell, so running `./mvnw -pl ca-api exec:java` from `backend/`
+     * resolves to backend/sample-data/documents. Override with
+     * -Dca.smoke.sampleDataDir=/abs/path if launching from elsewhere.
+     */
+    private static List<ToolOutputDto> loadToolOutputs(String packId, ObjectMapper mapper) {
+        Path sampleDir = Paths.get(System.getProperty(
+                "ca.smoke.sampleDataDir",
+                "./sample-data/documents")).toAbsolutePath().normalize();
 
-        ToolOutputDto docTool = new ToolOutputDto(
-                "to-doc-0001",
-                packId,
-                ToolId.DOCUMENT_METADATA,
-                Instant.parse("2026-01-01T00:00:00Z"),
-                Instant.parse("2026-01-01T00:00:01Z"),
-                "kyc-v1",
-                new DocumentMetadataToolPayload(List.of(doc)),
-                SIXTY_FOUR_ZEROS);
+        DocumentMetadataSource source = new FilesystemDocumentMetadataSource(sampleDir, mapper);
+        DocumentMetadataTool   adapter = new DocumentMetadataToolAdapter(source);
+        ToolInvoker invoker = new DefaultToolInvoker(null, adapter, null, null);
+
+        ToolOutputDto docTool = invoker.invoke(packId, ToolId.DOCUMENT_METADATA, "party-0001");
+        System.out.println("[fixtures] sample-data dir: " + sampleDir);
+        System.out.println("[fixtures] loaded docs for party-0001: "
+                + docTool.toolOutputId() + " (payload="
+                + docTool.payload().getClass().getSimpleName() + ")");
         return List.of(docTool);
     }
 

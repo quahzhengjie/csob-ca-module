@@ -1,0 +1,22 @@
+[
+  {
+    "documentId": "doc-010",
+    "type": "NRIC",
+    "issuedOn": "2015-06-12",
+    "expiresOn": "2030-06-12",
+    "uploadedAt": "2026-02-15T00:00:00Z",
+    "pageCount": 1,
+    "mimeType": "image/png",
+    "hash": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  {
+    "documentId": "doc-011",
+    "type": "UTILITY_BILL",
+    "issuedOn": "2026-01-05",
+    "expiresOn": "2026-07-05",
+    "uploadedAt": "2026-02-15T00:00:00Z",
+    "pageCount": 2,
+    "mimeType": "application/pdf",
+    "hash": "2222222222222222222222222222222222222222222222222222222222222222"
+  }
+]

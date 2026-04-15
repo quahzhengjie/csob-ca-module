@@ -1,0 +1,12 @@
+[
+  {
+    "documentId": "doc-001",
+    "type": "PASSPORT",
+    "issuedOn": "2020-01-01",
+    "expiresOn": "2026-04-01",
+    "uploadedAt": "2026-01-01T00:00:00Z",
+    "pageCount": 10,
+    "mimeType": "application/pdf",
+    "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+  }
+]

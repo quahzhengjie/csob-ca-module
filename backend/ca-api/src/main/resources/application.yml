@@ -18,6 +18,14 @@ ca:
     defaultVersion: v1.0
   prompt:
     defaultVersion: v1
+  tools:
+    documents:
+      # Filesystem-backed document metadata source. Each party's docs live in
+      # {root}/{partyId}.json. Overridden per profile (dev/staging/prod) or
+      # by env var (SPRING_CONFIG_IMPORT).
+      # When CsobDocumentMetadataSource lands, this key becomes the filesystem
+      # fallback path and a new ca.tools.documents.provider key will switch sources.
+      root: "./sample-data/documents"
   ai:
     provider: STUB             # STUB | HTTP  (override per profile)
     # HttpModelClient settings. Ignored when provider = STUB.
