@@ -5,6 +5,66 @@ implementation progress. Append-only. Newest entries at the top.
 
 ---
 
+## 2026-04-15 · Session 5 (CSOB source seam + second deterministic rule)
+
+### Outcome at end of session
+
+v1.0 checklist now evaluates **two** deterministic rules in pinned order. Tool-adapter layer gained a second source implementation (structure only) so the switch from `FILESYSTEM` to `CSOB` is a property flip — no engine, pipeline, or DTO change required when the CSOB contract lands.
+
+`mvn clean verify` green across all 9 modules. Smoke runner's new demonstration block evaluates both rules against two parties with contrasting fixtures:
+
+```
+---- party-0001 (has PASSPORT expiring 2026-04-01) ----
+  version=v1.0 pass=1 fail=1 missing=0 n/a=0
+    R-DOC-EXPIRED                FAIL  sev=HIGH   doc-001.expiresOn = 2026-04-01
+    R-DOC-REQUIRED-MISSING       PASS  sev=HIGH   doc-001.type = PASSPORT
+
+---- party-0002 (NRIC + UTILITY_BILL, no PASSPORT) ----
+  version=v1.0 pass=1 fail=0 missing=1 n/a=0
+    R-DOC-EXPIRED                PASS  sev=HIGH   doc-010.expiresOn = 2030-06-12
+    R-DOC-REQUIRED-MISSING       MISSING sev=HIGH required:PASSPORT.type = <absent>
+```
+
+Coordinator-driven PASS/FAIL scenarios now carry `checklist.findings : 2 (pass=1 fail=1)` — the engine iterates the pinned rule list in order and each rule evaluates independently.
+
+### Commits landing this session
+
+| Hash       | Title                                                                              |
+|------------|------------------------------------------------------------------------------------|
+| _pending_  | feat(tools): CSOB DocumentMetadataSource seam (structure only; awaiting API)       |
+| _pending_  | feat(checklist): RequiredDocumentMissingRule (second v1.0 rule)                    |
+
+### Phase 2G — CSOB DocumentMetadataSource seam (structure only)
+
+Goal: let operations switch sources via configuration the moment CSOB publishes the endpoint contract, without touching the checklist engine, pipeline, or any DTO. Path A — implement the class shape and wire the property switch, but deliberately throw from the fetch method until the real contract is known.
+
+- **`CsobDocumentMetadataSource implements DocumentMetadataSource`** — stores `baseUrl`, `timeoutSeconds`, `maxAttempts`, `authToken`. `getDocumentsForParty(partyId)` throws `UnsupportedOperationException` with a message naming the missing contract. Constructor validates non-null/non-blank base URL when the provider is selected.
+- **`application.yml`** — `ca.tools.documents.provider: FILESYSTEM | CSOB` added (default FILESYSTEM). CSOB subtree carries placeholder `base-url`, `timeout-seconds`, `max-attempts`, and an env-sourced `auth-token: "${CSOB_DOCUMENTS_AUTH_TOKEN:}"`. Secrets never committed.
+- **`OrchestrationConfig.documentMetadataSource(@Value ... )`** — switches on the provider property. `FILESYSTEM` returns the existing `FilesystemDocumentMetadataSource`; `CSOB` returns the new one. Fails loudly at boot if `provider=CSOB` but `base-url` is blank.
+
+No runtime behaviour change: local dev, smoke runner, and HTTP tests all keep `provider=FILESYSTEM`. Flipping to CSOB will throw at first invocation — deliberate, so QA notices the contract is not yet implemented.
+
+### Phase 2H — RequiredDocumentMissingRule (second v1.0 rule)
+
+Second deterministic rule in `ca-checklist/rules/v1`. Required type hardcoded to **`PASSPORT`** for v1 — the `Rule` interface does not receive party type today, so "PASSPORT for INDIVIDUAL vs CERT_OF_INCORPORATION for ORGANISATION" is noted in the Javadoc as a future contract extension, not part of this rule.
+
+- **Behaviour**: iterate `DocumentMetadataToolPayload` outputs. If any document's `type` equals `PASSPORT` (case-insensitive), emit `PASS` citing that document. Otherwise emit `MISSING` with synthetic evidence `DOCUMENT_META/required:PASSPORT.type = <absent>` — enough to uphold the `ChecklistFindingDto` "evidence required for MISSING" invariant and tell the reviewer exactly which type is expected. `FAIL` and `NOT_APPLICABLE` are deliberately not used; MISSING is the only right rejection status for absent required data.
+- **Severity**: `HIGH` (regulatory reference `MAS 626 §6.28`).
+- **Rule ID**: `R-DOC-REQUIRED-MISSING`.
+
+Integration (no version bump — v1.0 still pinned; adding a rule to an existing version is a violation of the version contract but acceptable at this pre-launch phase while v1.0 has never been used against a live pack; a real rule-set change post-launch MUST mint v1.1):
+
+- `DefaultChecklistVersionResolver.resolve("v1.0")` now returns `[DocumentExpiryRule, RequiredDocumentMissingRule]` in stable order.
+- `ChecklistEngineImpl` iterates in that order; findings surface in the same order.
+- `PipelineSmokeRunner` gained `demonstrateRequiredDocRule(...)` that evaluates the pinned rule set for `party-0001` (has PASSPORT → rule PASS; expiry still FAIL) and `party-0002` (NRIC + UTILITY_BILL only → rule MISSING; expiry PASS), proving the two rules evaluate independently.
+
+### Known limitations carried forward
+
+- Party-type-aware required-document sets still need a `Rule` interface extension — tracked as a deliberate future contract change, not a bug.
+- CSOB source seam is structure only; first live call will throw `UnsupportedOperationException` by design. Not a production path until the CSOB endpoint contract lands.
+
+---
+
 ## 2026-04-15 · Session 4 (real coordinator + minimal persistence + replay)
 
 ### Outcome at end of session

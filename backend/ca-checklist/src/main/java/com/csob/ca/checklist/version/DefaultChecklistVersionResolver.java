@@ -2,6 +2,7 @@ package com.csob.ca.checklist.version;
 
 import com.csob.ca.checklist.rules.Rule;
 import com.csob.ca.checklist.rules.v1.DocumentExpiryRule;
+import com.csob.ca.checklist.rules.v1.RequiredDocumentMissingRule;
 
 import java.time.Clock;
 import java.util.List;
@@ -17,7 +18,7 @@ import java.util.Objects;
  * — the engine surfaces findings in that order.
  *
  * Current versions:
- *   v1.0 → [ DocumentExpiryRule ]
+ *   v1.0 → [ DocumentExpiryRule, RequiredDocumentMissingRule ]
  *
  * The resolver injects a {@link Clock} into every rule that needs one, so
  * downstream evaluation is deterministic for tests.
@@ -40,7 +41,12 @@ public final class DefaultChecklistVersionResolver implements ChecklistVersionRe
     public List<Rule> resolve(String checklistVersion) {
         Objects.requireNonNull(checklistVersion, "checklistVersion");
         if (VERSION_V1_0.equals(checklistVersion)) {
-            return List.of(new DocumentExpiryRule(clock));
+            // Rule order is part of the version contract: findings surface in
+            // this order on every pack evaluated at v1.0 — do not reorder.
+            return List.of(
+                    new DocumentExpiryRule(clock),
+                    new RequiredDocumentMissingRule()
+            );
         }
         throw new IllegalArgumentException("Unknown checklistVersion: " + checklistVersion);
     }

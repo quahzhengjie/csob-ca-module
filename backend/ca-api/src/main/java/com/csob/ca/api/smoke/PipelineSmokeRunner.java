@@ -159,6 +159,84 @@ public final class PipelineSmokeRunner {
         banner("EQUIVALENCE SUMMARY (coordinator vs manual)");
         System.out.println("manual PASS → VALID    |  coord PASS → " + passPack.validationReport().status());
         System.out.println("manual FAIL → REJECTED |  coord FAIL → " + failPack.validationReport().status());
+
+        // =====================================================================
+        // RequiredDocumentMissingRule demonstration — pure checklist layer.
+        // We deliberately pick two parties with contrasting document sets so
+        // the new rule surfaces both PASS and MISSING on the same v1.0 pin.
+        //   party-0001 → has PASSPORT (doc-001) → required-doc = PASS
+        //   party-0002 → NRIC + UTILITY_BILL only → required-doc = MISSING
+        // Note: party-0001's PASSPORT is expired vs the fixed clock, so
+        // DocumentExpiryRule still fires FAIL there — that's intentional and
+        // shows the two rules evaluate independently in deterministic order.
+        // =====================================================================
+        banner("REQUIRED-DOC RULE DEMONSTRATION (party-0001 vs party-0002 @ v1.0)");
+        demonstrateRequiredDocRule(checklistVersion, mapper, fixedClock);
+    }
+
+    /**
+     * Side-by-side evaluation of the full v1.0 checklist for two parties with
+     * contrasting document fixtures. Not a JUnit assertion — just prints the
+     * findings in a reviewer-friendly format so the difference is obvious.
+     */
+    private static void demonstrateRequiredDocRule(String checklistVersion,
+                                                   ObjectMapper mapper,
+                                                   Clock clock) {
+        String presentPartyId = "party-0001";
+        String missingPartyId = "party-0002";
+
+        List<ToolOutputDto> present = loadToolOutputsFor(presentPartyId, "pack-demo-present", mapper);
+        List<ToolOutputDto> missing = loadToolOutputsFor(missingPartyId, "pack-demo-missing", mapper);
+
+        ChecklistVersionResolver resolver = new DefaultChecklistVersionResolver(clock);
+        ChecklistEngine engine = new ChecklistEngineImpl(resolver, clock);
+
+        ChecklistResultDto presentResult = engine.evaluate("pack-demo-present", checklistVersion, present);
+        ChecklistResultDto missingResult = engine.evaluate("pack-demo-missing", checklistVersion, missing);
+
+        System.out.println("---- " + presentPartyId + " (expected: required-doc PASS) ----");
+        printFindings(presentResult);
+        System.out.println();
+        System.out.println("---- " + missingPartyId + " (expected: required-doc MISSING) ----");
+        printFindings(missingResult);
+    }
+
+    private static void printFindings(ChecklistResultDto result) {
+        System.out.println("  version=" + result.checklistVersion()
+                + " pass=" + result.completion().passed()
+                + " fail=" + result.completion().failed()
+                + " missing=" + result.completion().missing()
+                + " n/a=" + result.completion().notApplicable());
+        for (ChecklistFindingDto f : result.findings()) {
+            System.out.println("    " + pad(f.ruleId(), 28) + " " + f.status()
+                    + "  sev=" + f.severity()
+                    + "  (" + f.evidence().size() + " evidence)");
+            f.evidence().forEach(e -> System.out.println(
+                    "        - " + e.sourceType() + "/" + e.sourceId()
+                            + "." + e.fieldPath() + " = " + e.observedValue()));
+        }
+    }
+
+    /**
+     * Parameterised variant of {@link #loadToolOutputs} — same filesystem
+     * source + adapter + invoker wiring, but targets an arbitrary partyId
+     * under a caller-supplied packId. Kept separate (rather than folded into
+     * loadToolOutputs) so the original scenario keeps its hardcoded
+     * party-0001 contract while the new demo can vary the party.
+     */
+    private static List<ToolOutputDto> loadToolOutputsFor(String partyId,
+                                                          String packId,
+                                                          ObjectMapper mapper) {
+        Path sampleDir = Paths.get(System.getProperty(
+                "ca.smoke.sampleDataDir",
+                "./sample-data/documents")).toAbsolutePath().normalize();
+
+        DocumentMetadataSource source = new FilesystemDocumentMetadataSource(sampleDir, mapper);
+        DocumentMetadataTool   adapter = new DocumentMetadataToolAdapter(source);
+        ToolInvoker invoker = new DefaultToolInvoker(null, adapter, null, null);
+
+        ToolOutputDto docTool = invoker.invoke(packId, ToolId.DOCUMENT_METADATA, partyId);
+        return List.of(docTool);
     }
 
     /**
