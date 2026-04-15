@@ -8,12 +8,14 @@ import com.csob.ca.ai.prompt.TemplatePromptAssembler;
 import com.csob.ca.ai.provider.StubModelClient;
 import com.csob.ca.ai.request.AiRequest;
 import com.csob.ca.ai.request.AiResponse;
+import com.csob.ca.checklist.engine.ChecklistEngine;
+import com.csob.ca.checklist.engine.ChecklistEngineImpl;
+import com.csob.ca.checklist.version.ChecklistVersionResolver;
+import com.csob.ca.checklist.version.DefaultChecklistVersionResolver;
 import com.csob.ca.shared.dto.AddressDto;
 import com.csob.ca.shared.dto.AiSummaryPayloadDto;
-import com.csob.ca.shared.dto.ChecklistCompletionDto;
 import com.csob.ca.shared.dto.ChecklistFindingDto;
 import com.csob.ca.shared.dto.ChecklistResultDto;
-import com.csob.ca.shared.dto.EvidenceDto;
 import com.csob.ca.shared.dto.IndividualDetailsDto;
 import com.csob.ca.shared.dto.PartyFactsDto;
 import com.csob.ca.shared.dto.RawAiOutputDto;
@@ -27,9 +29,6 @@ import com.csob.ca.tools.adapter.FilesystemDocumentMetadataSource;
 import com.csob.ca.tools.adapter.ToolInvoker;
 import com.csob.ca.shared.enums.ParseStatus;
 import com.csob.ca.shared.enums.PartyType;
-import com.csob.ca.shared.enums.RuleSeverity;
-import com.csob.ca.shared.enums.RuleStatus;
-import com.csob.ca.shared.enums.SourceType;
 import com.csob.ca.shared.enums.ToolId;
 import com.csob.ca.validation.DefaultValidationPipeline;
 import com.csob.ca.validation.ValidationPipeline;
@@ -55,8 +54,10 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
 
 /**
@@ -117,10 +118,17 @@ public final class PipelineSmokeRunner {
 
         ObjectMapper mapper = buildObjectMapper();
 
+        // Fixed clock so the smoke test stays deterministic indefinitely,
+        // regardless of when it's run. Chosen deliberately after
+        // party-0001/doc-001's expiresOn (2026-04-01) so DocumentExpiryRule
+        // fires FAIL against the filesystem fixture.
+        Clock fixedClock = Clock.fixed(Instant.parse("2026-04-15T00:00:00Z"), ZoneOffset.UTC);
+
         // fixtures
         PartyFactsDto partyFacts = mockPartyFacts(packId);
         List<ToolOutputDto> toolOutputs = loadToolOutputs(packId, mapper);
-        ChecklistResultDto checklistResult = mockChecklistResult(packId, checklistVersion);
+        ChecklistResultDto checklistResult = evaluateChecklist(
+                packId, checklistVersion, toolOutputs, fixedClock);
 
         // assemble the prompt ONCE and print it - both scenarios reuse it
         // (the stub ignores prompt content, but downstream ModelClient
@@ -241,25 +249,38 @@ public final class PipelineSmokeRunner {
         return List.of(docTool);
     }
 
-    private static ChecklistResultDto mockChecklistResult(String packId, String checklistVersion) {
-        ChecklistFindingDto finding = new ChecklistFindingDto(
-                "R-DOC-EXPIRED",
-                "Document has expired",
-                "MAS 626 §6.31",
-                RuleSeverity.HIGH,
-                RuleStatus.FAIL,
-                List.of(new EvidenceDto(
-                        SourceType.DOCUMENT_META,
-                        "doc-001",
-                        "expiresOn",
-                        "2026-04-01")));
-        return new ChecklistResultDto(
-                packId,
-                checklistVersion,
-                Instant.parse("2026-04-15T00:00:00Z"),
-                SIXTY_FOUR_ZEROS,
-                List.of(finding),
-                new ChecklistCompletionDto(1, 0, 1, 0, 0));
+    /**
+     * Run the real deterministic ChecklistEngine against the pipeline's
+     * frozen ToolOutputs. No hardcoded findings here — the result is fully
+     * derived from (a) the rule set pinned to {@code checklistVersion} and
+     * (b) the filesystem-backed document fixtures loaded upstream.
+     *
+     * The clock is pinned to 2026-04-15 UTC so PASS/FAIL semantics hold
+     * regardless of wall-clock drift.
+     */
+    private static ChecklistResultDto evaluateChecklist(String packId,
+                                                        String checklistVersion,
+                                                        List<ToolOutputDto> toolOutputs,
+                                                        Clock clock) {
+        ChecklistVersionResolver resolver = new DefaultChecklistVersionResolver(clock);
+        ChecklistEngine engine = new ChecklistEngineImpl(resolver, clock);
+        ChecklistResultDto result = engine.evaluate(packId, checklistVersion, toolOutputs);
+
+        System.out.println("[checklist] version=" + result.checklistVersion()
+                + " evaluatedAt=" + result.evaluatedAt()
+                + " totalRules=" + result.completion().totalRules()
+                + " pass=" + result.completion().passed()
+                + " fail=" + result.completion().failed()
+                + " missing=" + result.completion().missing()
+                + " n/a=" + result.completion().notApplicable());
+        for (ChecklistFindingDto f : result.findings()) {
+            System.out.println("[checklist]   " + f.ruleId() + "  " + f.status()
+                    + " (" + f.evidence().size() + " evidence)");
+            f.evidence().forEach(e -> System.out.println(
+                    "[checklist]     - " + e.sourceType() + "/" + e.sourceId()
+                            + "." + e.fieldPath() + " = " + e.observedValue()));
+        }
+        return result;
     }
 
     // ---- pipeline construction (mirrors OrchestrationConfig.validationPipeline) ----

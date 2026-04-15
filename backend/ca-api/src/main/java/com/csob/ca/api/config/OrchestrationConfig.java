@@ -10,6 +10,7 @@ import com.csob.ca.ai.provider.StubModelClient;
 import com.csob.ca.checklist.engine.ChecklistEngine;
 import com.csob.ca.checklist.engine.ChecklistEngineImpl;
 import com.csob.ca.checklist.version.ChecklistVersionResolver;
+import com.csob.ca.checklist.version.DefaultChecklistVersionResolver;
 import com.csob.ca.orchestration.PipelineCoordinator;
 import com.csob.ca.orchestration.policy.RetryPolicy;
 import com.csob.ca.orchestration.steps.GatherDataStep;
@@ -53,6 +54,7 @@ import org.springframework.context.annotation.Configuration;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.nio.file.Paths;
+import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 
@@ -150,9 +152,24 @@ public class OrchestrationConfig {
     }
 
     // ----- Checklist engine -----
+    /**
+     * Shared Clock bean — injected into the checklist engine and into every
+     * rule that needs a notion of "today" (e.g. DocumentExpiryRule). A
+     * single UTC system-clock bean by default; tests override at construction.
+     */
     @Bean
-    public ChecklistEngine checklistEngine(ChecklistVersionResolver resolver) {
-        return new ChecklistEngineImpl(resolver);
+    public Clock clock() {
+        return Clock.systemUTC();
+    }
+
+    @Bean
+    public ChecklistVersionResolver checklistVersionResolver(Clock clock) {
+        return new DefaultChecklistVersionResolver(clock);
+    }
+
+    @Bean
+    public ChecklistEngine checklistEngine(ChecklistVersionResolver resolver, Clock clock) {
+        return new ChecklistEngineImpl(resolver, clock);
     }
 
     // ----- Validation -----

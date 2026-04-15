@@ -5,6 +5,140 @@ implementation progress. Append-only. Newest entries at the top.
 
 ---
 
+## 2026-04-15 · Session 3 (end-to-end; real prompts, real HTTP client, real tool, first rule)
+
+### Outcome at end of session
+System is now a fully working end-to-end AI-assisted pipeline:
+
+```
+filesystem JSON fixtures
+  → FilesystemDocumentMetadataSource
+  → DocumentMetadataToolAdapter
+  → DefaultToolInvoker                          (ToolOutputDto, frozen + hashed)
+  → ChecklistEngineImpl + DocumentExpiryRule    (authoritative ChecklistResultDto)
+  → TemplatePromptAssembler                     (schema-grounded AiRequest)
+  → ModelClient  (StubModelClient default, HttpModelClient available)
+  → RawAiOutputDto
+  → DefaultValidationPipeline (10/10 real checks)
+  → ValidationReportDto (VALID | REJECTED)
+```
+
+The smoke runner exercises this full slice today against filesystem fixtures
+and a deterministic fixed clock. PASS scenario is fully VALID; FAIL scenario
+is REJECTED with a single targeted check failure.
+
+### Commits landed this session (8 ahead of initial scaffold)
+
+| Hash       | Title                                                                        |
+|------------|------------------------------------------------------------------------------|
+| `4e4f9e3`  | feat(smoke): end-to-end stub-driven pipeline execution (PASS + FAIL scenarios verified) |
+| `74e373e`  | refactor(validation): rename `*Checker` to `*Check` (no behavior change)     |
+| `fad2706`  | feat(ai-client): implement PromptAssembler with schema-driven structured prompt (stub model retained) |
+| `c7cbe7b`  | feat(ai-client): add HttpModelClient (provider-agnostic, retry-safe, stub retained) |
+| `b49161b`  | feat(tools): filesystem-backed DocumentMetadataSource + adapter (CSOB-ready seam) |
+| _pending_  | feat(checklist): first deterministic rule (DocumentExpiryRule) + engine wiring |
+
+### Phase completions
+
+- **Phase 1** (Architecture + Validation) — closed last session.
+- **Phase 2A** (PromptAssembler) — `TemplatePromptAssembler`, `ClasspathPromptLoader`,
+  six `{{placeholder}}` substitutions, `system.md` hardened. Prompt is
+  model-agnostic (schema embedded twice — once inline in the user prompt,
+  once as a standalone `outputSchemaJson` field for structured-output APIs).
+- **Phase 2B** (ModelClient) — `HttpModelClient` on the JDK built-in
+  `java.net.http.HttpClient`: retries on `HttpTimeoutException`, other
+  `IOException`, and HTTP 5xx only; fails fast on 4xx. `StubModelClient`
+  stays the default via `ca.ai.provider=STUB|HTTP` property switch.
+- **Phase 2C** (first tool integration) — `DocumentMetadataSource` port,
+  `FilesystemDocumentMetadataSource` impl (path-traversal guarded),
+  per-party JSON fixtures at `backend/sample-data/documents/`,
+  `DocumentMetadataToolAdapter` delegates to the source, `DefaultToolInvoker`
+  dispatches by `ToolId`. Null other-tool slots throw
+  `UnsupportedOperationException` with a clear message.
+- **Phase 2D** (first deterministic rule) — `DocumentExpiryRule` with
+  `Clock` injection, `DefaultChecklistVersionResolver` pinning `v1.0` to
+  `[DocumentExpiryRule]`, `ChecklistEngineImpl` with tally + SHA-256
+  `toolOutputsHashRoot`. Smoke runner replaces the hand-rolled
+  `mockChecklistResult(...)` with `engine.evaluate(...)` against a pinned
+  `Clock.fixed(2026-04-15Z)`.
+
+### Decisions made this session
+
+- **Renaming cleanup deferred to its own commit (`74e373e`)** — all ten
+  validation classes went from `*Checker` to `*Check` with `git mv` +
+  `sed`; git detected every one as a ≥95% rename, so `git log --follow`
+  still traces history. Support-class Javadocs touched in the same sweep.
+- **Field-name drift accepted** — `ValidationFailureDto` still uses
+  `locator`/`detail`. Later task specs drifted to `path`/`message`; same
+  semantics, kept the DTO to avoid `ca-shared` churn.
+- **Stub model client kept as default** — every new layer (prompt, HTTP,
+  tools, rules) landed as an additive change with `StubModelClient`
+  remaining the default bean, so the smoke runner stayed runnable at
+  every step.
+- **FAIL > MISSING > PASS > NOT_APPLICABLE** in `DocumentExpiryRule`:
+  expired doc (FAIL) takes precedence over doc-with-no-expiresOn (MISSING),
+  which takes precedence over all-valid (PASS). No docs at all →
+  NOT_APPLICABLE. Matches user guidance to keep findings minimal-noise
+  while satisfying the DTO's "evidence required for PASS/FAIL/MISSING"
+  invariant (one minimal evidence entry on PASS, per-doc evidence
+  otherwise).
+- **Fixed `Clock.fixed(2026-04-15Z)` in the smoke runner** so the
+  filesystem fixtures stay meaningful regardless of wall-clock drift.
+  Production beans use `Clock.systemUTC()`.
+- **`toolOutputsHashRoot` is a real SHA-256** over concatenated
+  `payloadHash|` strings. Still a placeholder (`0000…`) at the
+  `ToolOutputDto` level pending a canonical-JSON hasher, but at least the
+  pack-level root is now content-derived.
+
+### Invariants re-verified (still intact)
+
+- Deterministic layer is the system of record. ✓
+- AI is summarisation only; never populates a system-of-record field. ✓
+- Every validation check is deterministic and never throws. ✓
+- Single bounded AI call per pack. ✓
+- No agentic AI, no tool selection by AI, no OCR, no BLOB retrieval. ✓
+- Schema + DTOs unchanged. ✓
+- Tool adapters are read-only and deterministic. ✓
+
+### Pipeline state proof (this-session smoke output)
+
+```
+[fixtures] sample-data dir: backend/sample-data/documents
+[checklist] version=v1.0 evaluatedAt=2026-04-15T00:00:00Z
+            totalRules=1 pass=0 fail=1 missing=0 n/a=0
+[checklist]   R-DOC-EXPIRED  FAIL (1 evidence)
+[checklist]     - DOCUMENT_META/doc-001.expiresOn = 2026-04-01
+
+[PASS-SCENARIO] report.status = VALID     (10/10 checks PASS)
+[FAIL-SCENARIO] report.status = REJECTED  (9 PASS, 1 FACT_NOT_GROUNDED @
+                                            /sections/0/sentences/0/factMentions/2)
+```
+
+### Next up (Phase 3)
+
+1. **CSOB-backed `DocumentMetadataSource`** — single new class behind the
+   same `DocumentMetadataSource` interface; bean swap in
+   `OrchestrationConfig` keyed off a new `ca.tools.documents.provider`
+   property. Nothing else in the codebase changes.
+2. Additional checklist rules (e.g. document-type completeness,
+   screening-hit thresholds, UBO completeness).
+3. Further tool adapters (`ScreeningTool`, `RelatedPartiesTool`, `PartyTool`).
+4. ArchUnit module-boundary tests — promised at the v1 contract lock-in
+   but not yet in CI.
+5. `networknt` deprecation migration (`SchemaValidatorsConfig` builder API).
+6. JSON Schema byte-equality CI gate between
+   `ca-validation/resources/schemas/ai-output.schema.json` and the
+   `ca-ai-client` prompt mirror.
+
+### Not yet in scope (Phases 4–5)
+
+- `DocumentBlobSource` + OCR/extraction.
+- Richer AI prompt context (post-OCR).
+- Bounded agentic layer — tool orchestration only, still deterministic
+  gates before and after.
+
+---
+
 ## 2026-04-15 · Session 2 (build green; v1 validation chain complete)
 
 ### Outcome at end of session
